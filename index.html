@@ -1,0 +1,1527 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Deep Cuts: your music taste, decoded. Upload your Spotify, Apple Music, rekordbox or Last.fm export and get a listening, DJ and producing report. Runs entirely in your browser.">
+<meta property="og:title" content="Deep Cuts: your music taste, decoded">
+<meta property="og:description" content="A browser-only report on your music library. Your files never leave your device.">
+<meta name="theme-color" content="#13121b">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='9' width='3' height='6' rx='1' fill='%235a3fd0'/%3E%3Crect x='5' y='4' width='3' height='11' rx='1' fill='%235a3fd0'/%3E%3Crect x='9' y='1' width='3' height='14' rx='1' fill='%235a3fd0'/%3E%3Crect x='13' y='7' width='2' height='8' rx='1' fill='%235a3fd0'/%3E%3C/svg%3E">
+<title>Deep Cuts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+/* Layout: one-column app. Landing → setup (pick reports, drop files) → report with tabs. Every chart opens the songs behind it in a side drawer. BPM is the shared axis. */
+:root{
+  --bg:#f3f2f8; --surface:#fdfcff; --fg:#191728; --muted:#58556b; --faint:#8783a0; --line:#dfdbea; --grid:#ebe8f2;
+  --accent:#5a3fd0; --accent-soft:#e7e1fb; --accent-ink:#40279f;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#9a96a8; --s7:#cfcbd9;
+  --op:#1baf7a; --bu:#2a78d6; --pk:#5a3fd0; --warn:#c2410c;
+  --shadow:0 12px 40px rgba(25,23,40,.16);
+  --display:"Unbounded","Arial Black",system-ui,sans-serif;
+  --body:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#13121b; --surface:#1c1a27; --fg:#f0eef7; --muted:#aaa5bd; --faint:#7d7891; --line:#2e2a3b; --grid:#252231;
+  --accent:#a896ff; --accent-soft:#2c2548; --accent-ink:#c7bcff;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#77738a; --s7:#3e394d;
+  --op:#199e70; --bu:#3987e5; --pk:#a896ff; --warn:#fb923c; --shadow:0 12px 40px rgba(0,0,0,.5); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#13121b; --surface:#1c1a27; --fg:#f0eef7; --muted:#aaa5bd; --faint:#7d7891; --line:#2e2a3b; --grid:#252231;
+  --accent:#a896ff; --accent-soft:#2c2548; --accent-ink:#c7bcff;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#77738a; --s7:#3e394d;
+  --op:#199e70; --bu:#3987e5; --pk:#a896ff; --warn:#fb923c; --shadow:0 12px 40px rgba(0,0,0,.5); color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--fg);font:16px/1.55 var(--body);padding-inline:16px;padding-block:0 64px}
+.wrap{max-width:980px;margin:0 auto}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.brand{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:18px 0}
+.brand b{font:700 16px var(--display);letter-spacing:-.01em;display:inline-flex;align-items:center;gap:8px}
+.brand b i{display:inline-flex;gap:2px;align-items:flex-end;height:16px}
+.brand b i span{width:3px;background:var(--accent);border-radius:1px}
+.ghost{background:none;border:1px solid var(--line);border-radius:999px;padding:7px 14px;cursor:pointer;font-size:14px}
+.ghost:hover{border-color:var(--faint)}
+.cta{background:var(--fg);color:var(--bg);border:0;border-radius:999px;padding:12px 20px;font-weight:600;cursor:pointer}
+.cta:disabled{opacity:.4;cursor:not-allowed}
+.cta.alt{background:var(--accent);color:#fff}
+:root[data-theme="dark"] .cta.alt{color:#13121b}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .cta.alt{color:#13121b}}
+.eyebrow{font:500 12px/1.3 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+h1{font:700 clamp(32px,6.4vw,58px)/1.02 var(--display);letter-spacing:-.02em;margin:0;text-wrap:balance}
+h1 em{font-style:normal;color:var(--accent)}
+h2{font:700 26px/1.15 var(--display);margin:0;letter-spacing:-.01em;text-wrap:balance}
+h3{font:600 18px/1.3 var(--body);margin:0}
+.lede{max-width:60ch;color:var(--muted);margin:0;font-size:17px}
+.muted{color:var(--muted)}
+.a{color:var(--muted);font-size:13px}
+/* landing */
+.hero{padding-block:56px 32px;display:grid;gap:18px}
+.hero .ctas{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
+.bars{display:flex;gap:3px;align-items:flex-end;height:46px;max-width:520px}
+.bars i{flex:1;border-radius:2px 2px 0 0;background:var(--accent);opacity:.85}
+.feat{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.fcard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;display:grid;gap:6px;align-content:start}
+.fcard .k{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent-ink)}
+.fcard b{font:700 18px/1.25 var(--display)}
+.fcard p{margin:0;color:var(--muted);font-size:15px}
+.priv{display:flex;gap:12px;align-items:flex-start;background:var(--accent-soft);border-radius:12px;padding:14px 16px;font-size:15px}
+.priv b{font-weight:600}
+.steps3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;counter-reset:s}
+.steps3 div{border-top:2px solid var(--line);padding-top:10px;display:grid;gap:4px}
+.steps3 b{font:500 12px var(--mono);color:var(--muted)}
+section.view{display:grid;gap:40px;padding-top:24px}
+.block{display:grid;gap:12px;min-width:0}
+.block>p{margin:0;max-width:68ch}
+/* setup */
+.pickgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.pick{position:relative;background:var(--surface);border:1.5px solid var(--line);border-radius:12px;padding:16px 16px 16px 48px;display:grid;gap:4px;cursor:pointer;text-align:left}
+.pick input{position:absolute;left:16px;top:18px;width:18px;height:18px;accent-color:var(--accent)}
+.pick:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.pick b{font-weight:600}
+.pick span{font-size:14px;color:var(--muted)}
+.need{display:grid;gap:8px}
+.need div{display:grid;grid-template-columns:22px 1fr;gap:8px;font-size:15px}
+.need i{font-style:normal;font-weight:700}
+.need .ok i{color:var(--op)} .need .opt i{color:var(--faint)} .need .miss i{color:var(--warn)}
+.guide{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.guide summary{cursor:pointer;font-weight:600}
+.guide ol{margin:10px 0 0;padding-left:20px;display:grid;gap:6px}
+.guide a,.steps3 a,.sbody a{color:var(--accent-ink)}
+.srcs{display:grid;gap:8px}
+.sbody{display:grid;gap:8px;margin-top:10px;font-size:15px}
+.sbody p{margin:0;max-width:72ch}
+.badge{display:inline-block;font:500 11px var(--mono);letter-spacing:.04em;padding:3px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);margin-left:6px;vertical-align:1px;font-weight:500}
+.badge.best{background:var(--accent);border-color:var(--accent);color:#fff}
+:root[data-theme="dark"] .badge.best{color:#13121b}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .badge.best{color:#13121b}}
+.demobar{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:center;justify-content:space-between;background:var(--accent-soft);border-radius:12px;padding:12px 12px 12px 16px;font-size:15px}
+.notice{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:10px;padding:10px 14px;font-size:14px}
+.drop{border:2px dashed var(--line);border-radius:14px;padding:28px 16px;text-align:center;display:grid;gap:8px;justify-items:center;background:var(--surface);cursor:pointer}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop b{font:700 18px var(--display)}
+.files{display:grid;gap:6px}
+.file{display:grid;grid-template-columns:1fr auto;gap:4px 12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.file .n{font-weight:600;word-break:break-all;font-size:14px}
+.file select{font:13px var(--body);padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.file .a{grid-column:1/-1}
+.warnbox{background:var(--surface);border:1px solid var(--warn);border-radius:10px;padding:10px 14px;font-size:14px}
+/* report */
+.rhead{padding-block:28px 12px;display:grid;gap:12px}
+nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line);display:flex;gap:4px;overflow-x:auto;padding-block:8px}
+nav button{font:600 14px var(--body);color:var(--muted);background:none;border:0;padding:10px 14px;border-radius:999px;cursor:pointer;white-space:nowrap}
+nav button[aria-selected="true"]{background:var(--fg);color:var(--bg)}
+section.panel{display:grid;gap:44px;padding-top:32px}
+.thesis{font:500 19px/1.45 var(--body);max-width:62ch;margin:0}
+.thesis b{color:var(--accent-ink);font-weight:600}
+.hint{display:grid;gap:4px;font-size:14px;color:var(--muted);max-width:72ch;border-left:2px solid var(--line);padding-left:12px}
+.hint b{color:var(--fg);font-weight:600}
+.hint p{margin:0}
+.chart{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;position:relative;min-width:0}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.chart svg text{fill:var(--muted);font:12px var(--body)}
+.chart svg .lab{fill:var(--fg);font-weight:600}
+.chart svg .num{font-family:var(--mono);font-size:11px}
+.click{cursor:pointer}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted);margin-bottom:10px}
+.legend span,.legend button{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:10px;height:10px;border-radius:3px;display:inline-block;flex:none}
+.legend button{background:none;border:1px solid transparent;border-radius:999px;padding:3px 8px;cursor:pointer;color:var(--muted)}
+.legend button[aria-pressed="false"]{opacity:.45;text-decoration:line-through}
+.tip{position:absolute;pointer-events:none;background:var(--fg);color:var(--bg);font-size:13px;line-height:1.4;padding:8px 10px;border-radius:8px;max-width:260px;z-index:3;box-shadow:var(--shadow)}
+.tip small{opacity:.75;font-family:var(--mono);font-size:11px}
+details.t{font-size:14px} details.t summary{cursor:pointer;color:var(--muted)}
+.tbl{overflow-x:auto;min-width:0}
+table{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
+th{font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+td.m{font-family:var(--mono);font-size:13px;white-space:nowrap}
+td.hi{color:var(--accent-ink);font-weight:600}
+.chip{display:inline-flex;align-items:center;gap:6px;font:500 11px/1 var(--mono);letter-spacing:.05em;text-transform:uppercase;padding:5px 9px 5px 7px;border-radius:999px;color:var(--fg);border:1px solid var(--line);white-space:nowrap}
+.chip::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--c)}
+.chip.Opener{--c:var(--op)}.chip.Build{--c:var(--bu)}.chip.Peak{--c:var(--pk)}.chip.Check{--c:var(--warn)}
+.ebar{display:inline-block;width:44px;height:6px;border-radius:3px;background:var(--line);vertical-align:middle;margin-right:6px;overflow:hidden}
+.ebar i{display:block;height:100%;background:var(--accent)}
+.pills{display:flex;gap:6px;flex-wrap:wrap}
+.pills button{font:500 13px var(--body);border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:6px 12px;border-radius:999px;cursor:pointer}
+.pills button[aria-pressed="true"]{border-color:var(--fg);background:var(--fg);color:var(--bg)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:grid;gap:4px;text-align:left}
+button.stat{cursor:pointer} button.stat:hover{border-color:var(--faint)}
+.stat b{font:700 24px/1.1 var(--display);font-variant-numeric:tabular-nums}
+.stat span{font-size:13px;color:var(--muted)}
+.stat em{font-style:normal;font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--accent-ink)}
+.fp{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:24px;align-items:center}
+@media (max-width:760px){.fp{grid-template-columns:1fr}}
+.cbox{position:relative;aspect-ratio:1/1;max-width:100%}
+.cbox canvas{width:100%;height:100%;display:block;cursor:crosshair}
+.three{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;display:grid;gap:8px;align-content:start;text-align:left;cursor:pointer}
+.card:hover{border-color:var(--faint)}
+.card .k{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.card .h{font:700 19px/1.25 var(--display);letter-spacing:-.01em}
+.card p{margin:0;font-size:15px;color:var(--muted)}
+.card .go{font:600 14px var(--body);color:var(--accent-ink)}
+.share{background:var(--fg);color:var(--bg);border-radius:18px;padding:26px;display:grid;gap:14px;max-width:560px}
+.share .e{font:500 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;opacity:.7}
+.share .h{font:700 26px/1.1 var(--display);letter-spacing:-.01em}
+.share .row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.share .row div{display:grid;gap:2px}
+.share .row b{font:700 20px var(--display)}
+.share .row span{font-size:12px;opacity:.75}
+.shareBtns{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.share .f{display:flex;justify-content:space-between;font:500 11px var(--mono);opacity:.7}
+.eras{display:grid;border-left:2px solid var(--line);margin-left:6px}
+.era{display:grid;grid-template-columns:110px 1fr;gap:16px;padding:10px 0 10px 18px;position:relative;text-align:left;background:none;border:0;cursor:pointer;border-radius:8px}
+.era:hover{background:var(--surface)}
+.era::before{content:"";position:absolute;left:-7px;top:16px;width:12px;height:12px;border-radius:50%;background:var(--bg);border:2px solid var(--accent)}
+.era b{font:500 13px var(--mono);color:var(--muted);padding-top:2px}
+@media (max-width:520px){.era{grid-template-columns:1fr;gap:2px}}
+.wr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:20px}
+@media (max-width:720px){.wr{grid-template-columns:1fr}}
+.wr ol{margin:0;padding:0;list-style:none;display:grid;gap:2px}
+.wr li{display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:baseline;padding:6px 8px;border-radius:6px;cursor:pointer}
+.wr li:hover{background:var(--bg)}
+.wr li .r{font:500 12px var(--mono);color:var(--faint);text-align:right}
+.wr li .m{font:12px var(--mono);color:var(--faint)}
+.bigline{font:700 22px/1.25 var(--display);letter-spacing:-.01em;margin:0}
+.minibar{display:flex;height:10px;border-radius:5px;overflow:hidden;gap:2px}
+.abars{display:grid;gap:6px}
+.abar{display:grid;grid-template-columns:minmax(90px,170px) 1fr 40px;gap:10px;align-items:center;background:none;border:0;padding:3px 6px;border-radius:6px;cursor:pointer;text-align:left}
+.abar:hover{background:var(--bg)}
+.abar .t{display:block;height:14px;border-radius:0 4px 4px 0;background:var(--s6)}
+.abar.top .t{background:var(--accent)}
+.abar .n{font:12px var(--mono);color:var(--muted);text-align:right}
+.abar .nm{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.refs{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.ref{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:grid;gap:6px;align-content:start;text-align:left;cursor:pointer}
+.ref:hover{border-color:var(--faint)}
+.ref .tag{font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--accent-ink)}
+.ref .t{font-weight:600}
+.ref .spec{font:12px var(--mono);color:var(--faint)}
+.ref p{margin:0;font-size:14px}
+.plan3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.plan3 div{border-top:3px solid;padding-top:10px;display:grid;gap:4px}
+.plan3 .o{border-color:var(--op)}.plan3 .b{border-color:var(--bu)}.plan3 .p{border-color:var(--pk)}
+.plan3 b{font:500 13px var(--mono)}
+.plan3 p{margin:0;font-size:15px}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media (max-width:720px){.two{grid-template-columns:1fr}}
+.flags{display:grid;gap:8px}
+.flag{display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;align-items:start;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;text-align:left;cursor:pointer}
+.flag .bpm{font:700 18px/1 var(--display);min-width:48px}
+.flag p{margin:2px 0 0;font-size:14px;color:var(--muted)}
+.flag .tag{font:500 11px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--warn);white-space:nowrap}
+.planbar{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center}
+.planbar label{font-weight:600}
+.planbar input[type=range]{width:min(320px,100%);accent-color:var(--accent)}
+.planbar output{font:700 20px var(--display);min-width:90px}
+.planbar .chk{font-weight:400;display:inline-flex;gap:6px;align-items:center;font-size:14px;color:var(--muted)}
+.trans{font:12px var(--mono);color:var(--faint);white-space:nowrap}
+.trans.ok{color:var(--op)} .trans.warn{color:var(--warn)}
+.swap{background:none;border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12px;cursor:pointer;color:var(--muted)}
+.gap{background:var(--accent-soft);border-radius:10px;padding:12px 14px;font-size:14px;display:grid;gap:8px}
+.sl tr.row{cursor:pointer} .sl tr.row:hover td{background:var(--bg)} .sl tr.more td{background:var(--bg);font-size:14px}
+.mixes{display:grid;gap:4px} .mixes div{display:flex;gap:10px;flex-wrap:wrap}
+.star{color:var(--accent-ink);font-size:12px;font-family:var(--mono);white-space:nowrap}
+.empty{background:var(--surface);border:1px dashed var(--line);border-radius:12px;padding:18px;color:var(--muted)}
+.navr{display:flex;gap:8px;align-items:center}
+.linkb{background:none;border:0;padding:7px 6px;cursor:pointer;font-size:14px;color:var(--muted)}
+.linkb:hover{color:var(--fg)}
+.about{padding-top:12px;border-top:1px solid var(--line);scroll-margin-top:16px}
+.about>p{max-width:68ch}
+.aboutGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.aboutGrid div{display:grid;gap:4px;align-content:start;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:15px}
+.aboutGrid b{font-size:15px}
+.aboutGrid span{color:var(--muted)}
+.aboutGrid a{color:var(--accent-ink)}
+footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);font-size:14px;color:var(--muted);display:grid;gap:6px}
+footer p{margin:0;max-width:72ch}
+footer .legal{font-size:12px;color:var(--faint)}
+/* drawer */
+.scrim{position:fixed;inset:0;background:rgba(10,8,16,.35);z-index:20}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(460px,100%);background:var(--surface);border-left:1px solid var(--line);box-shadow:var(--shadow);z-index:21;display:grid;grid-template-rows:auto auto 1fr;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.dh{padding:18px 18px 10px;display:grid;gap:6px;border-bottom:1px solid var(--line)}
+.dh .top{display:flex;justify-content:space-between;gap:12px;align-items:start}
+.dh h3{font:700 19px/1.25 var(--display);letter-spacing:-.01em}
+.dh p{margin:0;font-size:14px;color:var(--muted)}
+.x{background:none;border:1px solid var(--line);border-radius:999px;width:34px;height:34px;cursor:pointer;flex:none;font-size:18px;line-height:1}
+.dc{display:flex;gap:8px;padding:10px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap;align-items:center}
+.dc input{flex:1;min-width:140px;font:14px var(--body);padding:7px 12px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.dc select{font:13px var(--body);padding:7px 10px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.dc .cnt{font:12px var(--mono);color:var(--faint)}
+.dl{overflow-y:auto;padding:6px 10px 24px}
+.song{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:9px 8px;border-bottom:1px solid var(--line)}
+.song .nm{font-weight:600;font-size:15px;min-width:0}
+.song .ar{color:var(--muted);font-size:13px;grid-column:1}
+.song .meta{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:4px 10px;font:12px var(--mono);color:var(--faint)}
+.song .meta i{font-style:normal;display:inline-flex;align-items:center;gap:4px}
+.song .meta i.g::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--c,transparent)}
+.song a{font:600 12px var(--body);color:var(--accent-ink);text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:4px 10px;align-self:start;white-space:nowrap}
+.song .why{grid-column:1/-1;font-size:13px;color:var(--muted)}
+.showmore{margin:12px 8px;background:none;border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer}
+@media (prefers-reduced-motion:no-preference){.drawer{animation:slide .18s ease-out}@keyframes slide{from{transform:translateX(24px);opacity:.6}to{transform:none;opacity:1}}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><b><i aria-hidden="true"><span style="height:6px"></span><span style="height:12px"></span><span style="height:16px"></span><span style="height:9px"></span></i>Deep Cuts</b><div class="navr"><button class="linkb" id="aboutLink">About</button><button class="ghost" id="restart" hidden>Start over</button></div></div>
+
+  <!-- LANDING -->
+  <section class="view" id="landing">
+    <div class="hero">
+      <div class="eyebrow">For listeners, DJs and producers</div>
+      <h1>Deep Cuts: your music taste, <em>decoded</em>.</h1>
+      <p class="lede">Drop in your music library exports (Spotify, Apple Music, rekordbox and more) and get an explorable map of what you love: your eras and moods, the DJ lanes hiding in your library, and the sound you'd make as a producer. Every chart opens the songs behind it.</p>
+      <div class="ctas"><button class="cta alt" id="goUpload">Analyze my library</button><button class="cta" id="goDemo">Try the demo</button></div>
+      <div class="bars" id="heroBars" aria-hidden="true"></div>
+    </div>
+    <div class="priv"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style="flex:none;margin-top:2px"><rect x="5" y="10" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2"/></svg><span><b>Your files never leave your browser.</b> Everything is analyzed on your device. Nothing is uploaded, stored or shared, and closing the tab clears it.</span></div>
+    <div class="block">
+      <h3>Three reports, pick any</h3>
+      <div class="feat">
+        <div class="fcard"><span class="k">Listening</span><b>Who you are as a listener</b><p>Your sonic fingerprint, eras, mood map, genre shifts, Wrapped memory lane and the artists you actually return to.</p></div>
+        <div class="fcard"><span class="k">DJ</span><b>The sets hiding in your library</b><p>Your lanes on a BPM map, a Camelot key wheel, energy × tempo, a set planner that orders tracks by key and tempo, and forgotten gems.</p></div>
+        <div class="fcard"><span class="k">Producing</span><b>The sound you'd make</b><p>How your inspiration playlist differs from your listening, your target tempo and mood, and a reference board of tracks to study.</p></div>
+      </div>
+    </div>
+    <div class="block">
+      <h3>How it works</h3>
+      <div class="steps3">
+        <div><b>1 · Choose</b><span>Pick the reports you want. The app tells you which playlists to export.</span></div>
+        <div><b>2 · Export</b><span>Download your library from where your music lives. For Spotify, the free tool <a href="https://exportify.net" target="_blank" rel="noopener">Exportify</a> takes two minutes.</span></div>
+        <div><b>3 · Explore</b><span>Drop the files in. Your report builds in seconds, right here in your browser.</span></div>
+      </div>
+    </div>
+    <div class="block about" id="about">
+      <h3>About Deep Cuts</h3>
+      <p>I'm Alina. I started DJing this fall and wanted to understand my own taste: what I actually save, how it's changed, and which songs would work in a set. Spotify gives you a year-end recap, but not the why. So I built the tool I wanted, then opened it up so anyone can run their own library through it.</p>
+      <div class="aboutGrid">
+        <div><b>Private by design</b><span>Your files never leave your browser. There's no account, no server and no tracking. Close the tab and it's gone.</span></div>
+        <div><b>How it reads your music</b><span>Genres come from your music service, and tempo, key and mood come from Spotify's audio data. Every insight comes from fixed rules applied to your numbers, not AI guesses, and "How it works" in your report shows the math.</span></div>
+        <div><b>Built with</b><span>Claude as a coding partner, plus a handful of open tools: <a href="https://exportify.net" target="_blank" rel="noopener">Exportify</a>, <a href="https://www.papaparse.com" target="_blank" rel="noopener">PapaParse</a>, <a href="https://stuk.github.io/jszip/" target="_blank" rel="noopener">JSZip</a>.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SETUP -->
+  <section class="view" id="setup" hidden>
+    <div class="block">
+      <div class="eyebrow">Step 1 of 2</div>
+      <h2>Which reports do you want?</h2>
+      <div class="pickgrid" id="picks">
+        <label class="pick"><input type="checkbox" value="listening" checked><b>Listening</b><span>Your eras, moods, genres and artists.</span></label>
+        <label class="pick"><input type="checkbox" value="dj" checked><b>DJ</b><span>Lanes, keys, energy and a set planner.</span></label>
+        <label class="pick"><input type="checkbox" value="producing" checked><b>Producing</b><span>Your target sound and tracks to study.</span></label>
+      </div>
+    </div>
+    <div class="block">
+      <div class="eyebrow">Step 2 of 2</div>
+      <div class="priv" id="demoBanner" hidden><span><b>Demo mode.</b> We've loaded a made-up listener's library below. The artists and songs are invented, so you won't find them on Spotify. It includes Liked Songs, five years of Your Top Songs playlists, an inspiration playlist and a DJ set. Pick your reports above, then click See demo report. <button class="ghost" id="useOwn" style="margin-left:6px">Use my own files instead</button></span></div>
+      <h2 id="addTitle">Add your music library</h2>
+      <p class="muted" style="margin:0" id="addIntro">Pick where your music lives. Each source unlocks different parts of the report, and you can combine several. Spotify via Exportify is the only one that unlocks everything.</p>
+      <div class="need" id="need"></div>
+      <label class="drop" id="drop" for="fileIn"><b>Drop your files here</b><span class="muted">CSV, XML, JSON or a Spotify ZIP · or click to choose files</span><input id="fileIn" type="file" accept=".csv,.xml,.json,.zip,text/csv,application/json,application/xml,application/zip" multiple hidden></label>
+      <div class="files" id="files"></div>
+      <div id="setupWarn"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="cta alt" id="build" disabled>Build my report</button><button class="ghost" id="demo2">Use the demo instead</button></div>
+      <h3 id="srcTitle" style="margin-top:12px">Ways to export your files</h3>
+      <div class="srcs" id="srcs">
+        <details class="guide" open>
+          <summary>Spotify playlists via Exportify <span class="badge best">Recommended · all 3 reports</span></summary>
+          <div class="sbody">
+            <p><b>What it is.</b> <a href="https://exportify.net" target="_blank" rel="noopener">Exportify</a> is a free, open-source website (<a href="https://github.com/pavelkomarov/exportify" target="_blank" rel="noopener">code on GitHub</a>) that downloads any Spotify playlist as a spreadsheet (CSV). Each row is a song with its genres, tempo (BPM), key, energy and mood scores, which is exactly what Deep Cuts needs.</p>
+            <p><b>How it works.</b> You log in with Spotify's own login page and approve read-only access to your playlists. Exportify can't change anything in your account, and Deep Cuts never sees your Spotify login: you only hand Deep Cuts the files you download.</p>
+            <p><b>Unlocks.</b> Listening, DJ and Producing. <b>Time:</b> about 2 minutes.</p>
+            <ol>
+              <li>Open <a href="https://exportify.net" target="_blank" rel="noopener">exportify.net</a> and click to log in with Spotify. Approve the permissions.</li>
+              <li>Find <b>Liked Songs</b> at the top of your playlist list and click <b>Export</b>. This is your main library.</li>
+              <li>Optional extras: your <b>Your Top Songs 20XX</b> playlists (Spotify Wrapped), a playlist of <b>tracks you'd want to make</b> (for Producing) and a playlist of <b>tracks for a DJ set</b>.</li>
+              <li>The files land in your Downloads folder. Drop them all in the box below at once.</li>
+            </ol>
+          </div>
+        </details>
+        <details class="guide">
+          <summary>Spotify account data (listening history) <span class="badge">Listening · play counts</span></summary>
+          <div class="sbody">
+            <p><b>What it is.</b> Spotify's official copy of your data, requested from your <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener">account privacy page</a>. It includes every song you've played and how long, which Exportify doesn't have. It has no genres, tempo or mood, so pair it with Exportify for the full picture.</p>
+            <p><b>Unlocks.</b> "What you actually play": play counts, hours listened, songs you play but never saved. <b>Time:</b> 1–5 days for Spotify to email it (officially up to 30 for the full history).</p>
+            <ol>
+              <li>Go to <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener">spotify.com/account/privacy</a> and scroll to <b>Download your data</b>.</li>
+              <li>Tick <b>Extended streaming history</b> for your full lifetime history. "Account data" only covers the past year, but includes your library and playlists.</li>
+              <li>Confirm the email Spotify sends, then wait for the second email with your download link.</li>
+              <li>Drop the <b>.zip file as is</b>. Deep Cuts opens it and reads only the music files inside.</li>
+            </ol>
+          </div>
+        </details>
+        <details class="guide">
+          <summary>Apple Music library <span class="badge">Listening · play counts</span></summary>
+          <div class="sbody">
+            <p><b>What it is.</b> The Music app on a Mac can export your whole library as a file with every song's genre, play count, year and date added (<a href="https://support.apple.com/guide/music/save-a-copy-of-your-playlists-mus27cd5060f/mac" target="_blank" rel="noopener">Apple's guide</a>). Your playlists come along too.</p>
+            <p><b>Unlocks.</b> Listening (genres, eras, artists, play counts). No tempo or mood data, so DJ and Producing need another source. <b>Time:</b> 1 minute. Mac only.</p>
+            <ol>
+              <li>Open the <b>Music</b> app on your Mac.</li>
+              <li>Choose <b>File → Library → Export Library…</b> and save the .xml file.</li>
+              <li>Drop the .xml file below.</li>
+            </ol>
+          </div>
+        </details>
+        <details class="guide">
+          <summary>rekordbox collection (for DJs) <span class="badge">DJ · accurate BPM &amp; key</span></summary>
+          <div class="sbody">
+            <p><b>What it is.</b> If you DJ with rekordbox, your collection file holds the tempo and key rekordbox analyzed from the audio, which are more accurate than Spotify's. Your playlists come along too, so a set playlist can feed the planner.</p>
+            <p><b>Unlocks.</b> DJ lanes, Camelot wheel and set planner, plus genres and play counts for Listening. No energy or mood scores. <b>Time:</b> 1 minute.</p>
+            <ol>
+              <li>Open rekordbox on your computer.</li>
+              <li>Choose <b>File → Export Collection in xml format</b> and save the file.</li>
+              <li>Drop the .xml file below.</li>
+            </ol>
+          </div>
+        </details>
+        <details class="guide">
+          <summary>SoundCloud likes and playlists <span class="badge">Listening basics</span></summary>
+          <div class="sbody">
+            <p><b>What it is.</b> SoundCloud doesn't offer its own export, so use <a href="https://www.tunemymusic.com/transfer/soundcloud-to-file" target="_blank" rel="noopener">TuneMyMusic's SoundCloud-to-file tool</a>. It logs into SoundCloud with your permission and saves your likes and playlists as a CSV file.</p>
+            <p><b>Unlocks.</b> Your library and artists. The file has titles and artists only, so genres, tempo and mood will be missing. Pair it with Exportify or rekordbox for the full report. <b>Time:</b> about 5 minutes. Very large libraries may need a paid TuneMyMusic plan, so check their plans page.</p>
+            <ol>
+              <li>Open <a href="https://www.tunemymusic.com/transfer/soundcloud-to-file" target="_blank" rel="noopener">TuneMyMusic: SoundCloud to file</a>.</li>
+              <li>Connect your SoundCloud account and choose your <b>liked tracks</b> and any playlists.</li>
+              <li>Pick <b>Export to file</b> (CSV) as the destination and download it.</li>
+              <li>Drop the CSV below. Set a playlist to "DJ set playlist" in the list if it's your set.</li>
+            </ol>
+          </div>
+        </details>
+        <details class="guide">
+          <summary>Other services via TuneMyMusic or Soundiiz <span class="badge">Listening basics</span></summary>
+          <div class="sbody">
+            <p><b>What it is.</b> <a href="https://www.tunemymusic.com" target="_blank" rel="noopener">TuneMyMusic</a> and <a href="https://soundiiz.com" target="_blank" rel="noopener">Soundiiz</a> move playlists between services and can save them as CSV files. Use them for YouTube Music, TIDAL, Amazon Music or Deezer.</p>
+            <p><b>Unlocks.</b> Your library and artists. These files carry only titles and artists, so genres, tempo and mood will be missing. Best combined with another source. <b>Time:</b> 5 minutes.</p>
+            <ol>
+              <li>On TuneMyMusic, choose your service as the source, pick the playlists, then choose <b>Export to file</b> as the destination (<a href="https://www.tunemymusic.com/transfer/youtube-to-file" target="_blank" rel="noopener">example for YouTube Music</a>).</li>
+              <li>On Soundiiz, open a playlist and use its <b>Export</b> option to save a CSV.</li>
+              <li>Drop the CSV files below.</li>
+            </ol>
+          </div>
+        </details>
+        <details class="guide">
+          <summary>Last.fm scrobbles <span class="badge">Listening · history</span></summary>
+          <div class="sbody">
+            <p><b>What it is.</b> If you use <a href="https://www.last.fm" target="_blank" rel="noopener">Last.fm</a>, it has logged ("scrobbled") every song you've played across apps, often for many years. A free tool downloads that history.</p>
+            <p><b>Unlocks.</b> Play counts and your listening timeline. <b>Time:</b> 1–2 minutes.</p>
+            <ol>
+              <li>Open the <a href="https://mainstream.ghan.nl/export.html" target="_blank" rel="noopener">Last.fm data export tool</a>.</li>
+              <li>Enter your Last.fm username, choose <b>Scrobbles</b> and <b>CSV</b>, then click <b>Go</b>.</li>
+              <li>Drop the CSV file below.</li>
+            </ol>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- REPORT -->
+  <section id="report" hidden>
+    <header class="rhead">
+      <div class="eyebrow" id="rEyebrow"></div>
+      <h1 id="rHead"></h1>
+      <p class="lede" id="rLede"></p>
+      <div class="demobar" id="demoBar" hidden><span><b>This is a made-up demo listener.</b> The artists and songs are invented. Ready to see your own taste decoded?</span><button class="cta alt" id="demoBuild">Build my report</button></div>
+    </header>
+    <nav role="tablist" aria-label="Report sections" id="tabs"></nav>
+    <div id="panels"></div>
+  </section>
+
+  <footer><p><b>Deep Cuts</b>: your music taste, decoded. Everything is analyzed in your browser. Genres come from your music service and are assigned per artist on Spotify, so some songs are untagged. BPM and key come from automated detection and can be off, so confirm them in your DJ software.</p><p class="legal">Deep Cuts is an independent project and isn't affiliated with or endorsed by Spotify, Apple, Last.fm, SoundCloud or AlphaTheta (rekordbox). All trademarks belong to their owners.</p></footer>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dT" hidden>
+  <div class="dh"><div class="top"><h3 id="dT"></h3><button class="x" id="dX" aria-label="Close">×</button></div><p id="dS"></p></div>
+  <div class="dc"><input id="dq" type="search" placeholder="Filter this list" aria-label="Filter songs"><select id="dsort" aria-label="Sort songs"><option value="rel">Best match</option><option value="pop">Most popular</option><option value="new">Recently liked</option><option value="old">First liked</option><option value="bpm">Tempo</option></select><span class="cnt" id="dN"></span></div>
+  <div class="dl" id="dL"></div>
+</aside>
+
+<script>
+/* ================= ENGINE: parsing + analysis (pure, no DOM) ================= */
+const LN = {};
+(function(){
+const FAM = [['stutter','Stutter house'],['afro','Afro house'],['amapiano','Afro house'],['organic','Melodic/organic house'],['melodic house','Melodic/organic house'],['melodic techno','Melodic/organic house'],['tribal','Melodic/organic house'],['progressive','Melodic/organic house'],['downtempo','Downtempo/chill'],['chill','Downtempo/chill'],['techno','Techno'],['tech house','Tech/bass house'],['bass house','Tech/bass house'],['g-house','Tech/bass house'],['deep house','Deep house'],['disco','Disco/French house'],['french house','Disco/French house'],['garage','UK garage/DnB'],['drum and bass','UK garage/DnB'],['jungle','UK garage/DnB'],['bassline','UK garage/DnB'],['dubstep','Bass/dubstep'],['future bass','Bass/dubstep'],['melodic bass','Bass/dubstep'],['big room','EDM/big room'],['slap','EDM/big room'],['edm','EDM/big room'],['tropical','EDM/big room'],['trance','Trance'],['hardstyle','Hard dance'],['hard techno','Techno'],['house','House'],['idm','Electronica'],['electro','Electronica']];
+const ELEC_WORDS = ['house','techno','edm','dubstep','trance','garage','drum and bass','jungle','downtempo','disco','big room','afro tech','chillstep','chillwave','slap','idm','electro','hardstyle','bassline','amapiano'];
+// broad groups: [name, keywords]
+const BROAD = [
+  ['Electronic', ELEC_WORDS],
+  ['Hip hop', ['rap','hip hop','trap','drill','hyphy','grime','phonk']],
+  ['R&B / soul', ['r&b','soul','funk','neo soul']],
+  ['Rock', ['rock','punk','metal','grunge','britpop','emo','shoegaze']],
+  ['Latin', ['reggaeton','latin','dembow','bachata','salsa','cumbia','urbano','corrido','banda']],
+  ['Country / folk', ['country','folk','americana','bluegrass','singer-songwriter']],
+  ['Jazz / classical', ['jazz','classical','orchestra','opera','piano','swing','bossa']],
+  ['World', ['afrobeats','afropop','k-pop','j-pop','bollywood','turkish','russian','ukrainian','french','german','italian','arab','mizrahi','dancehall','reggae','chanson']],
+  ['Pop / indie', ['pop','indie','bedroom','alt','soft']],
+];
+const CAM = {'0,1':'8B','1,1':'3B','2,1':'10B','3,1':'5B','4,1':'12B','5,1':'7B','6,1':'2B','7,1':'9B','8,1':'4B','9,1':'11B','10,1':'6B','11,1':'1B','0,0':'5A','1,0':'12A','2,0':'7A','3,0':'2A','4,0':'9A','5,0':'4A','6,0':'11A','7,0':'6A','8,0':'1A','9,0':'8A','10,0':'3A','11,0':'10A'};
+const num = v => { const n = parseFloat(v); return isFinite(n) ? n : null; };
+const col = (row, ...names) => { for (const n of names) if (row[n] !== undefined && row[n] !== '') return row[n]; return ''; };
+
+/* ---- normalize one Exportify row ---- */
+function normRow(r, i){
+  const uri = col(r, 'Track URI', 'Spotify ID', 'URI');
+  const id = String(uri).split(':').pop() || ('row' + i);
+  const artistsRaw = String(col(r, 'Artist Name(s)', 'Artist Name', 'Artists', 'Artist'));
+  const artists = (artistsRaw.includes(';') ? artistsRaw.split(';') : artistsRaw.split(/,\s(?=[A-Z0-9])/)).map(s => s.trim()).filter(Boolean);
+  const added = String(col(r, 'Added At', 'Date Added')).slice(0, 10);
+  const key = num(col(r, 'Key')), mode = num(col(r, 'Mode'));
+  const t = {
+    id, name: String(col(r, 'Track Name', 'Name', 'Title')), artists, artist: artists.join(', '),
+    added: /^\d{4}-\d\d-\d\d$/.test(added) && !added.startsWith('1970') ? added : '',
+    rel: parseInt(String(col(r, 'Release Date', 'Album Release Date')).slice(0, 4)) || 0,
+    genres: String(col(r, 'Genres', 'Artist Genres')).split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
+    bpm: Math.round(num(col(r, 'Tempo')) || 0),
+    energy: num(col(r, 'Energy')), valence: num(col(r, 'Valence')), dance: num(col(r, 'Danceability')),
+    acoustic: num(col(r, 'Acousticness')), instr: num(col(r, 'Instrumentalness')), speech: num(col(r, 'Speechiness')),
+    pop: num(col(r, 'Popularity')) || 0, dur: Math.round((num(col(r, 'Duration (ms)', 'Duration_ms')) || 0) / 1000),
+    key, mode,
+  };
+  ['energy','valence','dance','acoustic','instr','speech'].forEach(k => { if (t[k] != null && (t[k] < 0 || t[k] > 1)) t[k] = null; });
+  if (t.bpm < 40 || t.bpm > 250) t.bpm = 0;
+  if (t.key != null && (t.key < 0 || t.key > 11 || !Number.isInteger(t.key))) t.key = null;
+  if (t.mode !== 0 && t.mode !== 1) t.mode = null;
+  t.camelot = t.key != null && t.mode != null ? CAM[t.key + ',' + t.mode] : '?';
+  t.t = t.added ? Date.parse(t.added) : 0; t.y = t.added ? +t.added.slice(0, 4) : 0;
+  return t;
+}
+LN.normRows = rows => rows.map(normRow).filter(t => t.name);
+LN.hasFeatures = list => list.length > 0 && list.filter(t => t.energy != null && t.bpm > 0).length / list.length > 0.5;
+
+/* ---- classify a file by name ---- */
+LN.guessRole = (fname, rows) => {
+  const f = fname.toLowerCase();
+  let m = f.match(/top[_ -]?songs[_ -]?(\d{4})/); if (m) return 'wrapped:' + m[1];
+  if (/all[_ -]?time/.test(f)) return 'wrapped:All-time';
+  if (/liked|library|saved/.test(f)) return 'library';
+  if (/inspo|inspiration|produc|reference|ref[_ -]/.test(f)) return 'inspo';
+  if (/set|dj|crate|gig|mix/.test(f)) return 'set';
+  return rows && rows.length > 300 ? 'library' : 'extra';
+};
+
+/* ---- build the full model ---- */
+const normTxt = s => String(s || '').toLowerCase().replace(/\s*[\(\[](feat|ft|with)\.?[^\)\]]*[\)\]]/g, '').replace(/\s+-\s+(remaster|remastered|radio edit|single version|original mix|edit)\b.*$/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+LN.keyOf = t => normTxt((t.artists && t.artists[0]) || t.artist) + '|' + normTxt(t.name);
+const mergeInto = (a, b) => { for (const k of ['bpm','energy','valence','dance','acoustic','instr','speech','key','mode','dur','rel','added','t','y']) if ((a[k] == null || a[k] === 0 || a[k] === '') && b[k] != null && b[k] !== 0 && b[k] !== '') a[k] = b[k];
+  if ((!a.camelot || a.camelot === '?') && b.camelot && b.camelot !== '?') a.camelot = b.camelot;
+  if (b.genres && b.genres.length) a.genres = [...new Set([...(a.genres || []), ...b.genres])];
+  a.pop = Math.max(a.pop || 0, b.pop || 0); a.plays = (a.plays || 0) + (b.plays || 0);
+  if (/^[0-9A-Za-z]{22}$/.test(b.id) && !/^[0-9A-Za-z]{22}$/.test(a.id)) a.id = b.id;
+  if (b.added && a.added && b.added < a.added) { a.added = b.added; a.t = b.t; a.y = b.y; }
+  return a; };
+LN.mergeList = list => { const m = new Map(); list.forEach(t => { const k = LN.keyOf(t); if (!k || k === '|') return; if (m.has(k)) mergeInto(m.get(k), t); else m.set(k, {...t, genres: [...(t.genres || [])]}); }); return [...m.values()]; };
+LN.build = function(input){
+  input.plays = input.plays || [];
+  // aggregate listening history
+  const pmap = new Map();
+  input.plays.forEach(p => { const k = LN.keyOf(p); if (!k || k === '|') return; let r = pmap.get(k); if (!r) pmap.set(k, r = {name: p.name, artist: p.artist, artists: p.artists, n: 0, ms: 0, first: p.ts, last: p.ts, id: p.id}); r.n++; r.ms += p.ms || 0; if (p.ts && (!r.first || p.ts < r.first)) r.first = p.ts; if (p.ts && (!r.last || p.ts > r.last)) r.last = p.ts; if (!r.id && p.id) r.id = p.id; });
+  if (!input.library.length && !input.extra.length && pmap.size) input.library = [...pmap.values()].map((r, i) => ({id: r.id || 'play' + i, name: r.name, artists: r.artists, artist: r.artist, added: (r.first || '').slice(0, 10), t: r.first ? Date.parse(r.first) : 0, y: r.first ? +r.first.slice(0, 4) : 0, rel: 0, genres: [], bpm: 0, energy: null, valence: null, dance: null, acoustic: null, instr: null, speech: null, pop: 0, dur: 0, key: null, mode: null, camelot: '?'}));
+
+  // input: {library:[], wrapped:{key:[]}, inspo:[], set:[], extra:[]}
+  const all = [...input.library, ...Object.values(input.wrapped).flat(), ...input.inspo, ...input.set, ...input.extra];
+  const amap = new Map();
+  all.forEach(t => t.artists.forEach(a => { if (!amap.has(a)) amap.set(a, new Map()); const m = amap.get(a); t.genres.forEach(g => m.set(g, (m.get(g) || 0) + 1)); }));
+  const prep = t => {
+    let g = t.genres;
+    if (!g.length) { const c = new Map(); t.artists.forEach(a => (amap.get(a) || new Map()).forEach((v, k) => c.set(k, (c.get(k) || 0) + v))); g = [...c.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(x => x[0]); }
+    t.g2 = g;
+    const fams = g.map(x => (FAM.find(([k]) => x.includes(k)) || [])[1]).filter(Boolean);
+    const fc = new Map(); fams.forEach(f => fc.set(f, (fc.get(f) || 0) + 1));
+    t.lane = fams.length ? [...fc.entries()].sort((a, b) => b[1] - a[1])[0][0] : null;
+    const s = g.join(' ');
+    t.broad = !g.length ? 'Untagged' : g.some(x => x === 'dance' || x === 'electronic' || x === 'electronica/dance') ? 'Electronic' : (BROAD.find(([, ks]) => ks.some(k => s.includes(k))) || ['Other'])[0];
+    t.elec = t.broad === 'Electronic';
+    return t;
+  };
+  const dedupe = list => LN.mergeList(list);
+  let library = dedupe(input.library.length ? [...input.library, ...input.extra] : [...input.extra, ...input.set, ...input.inspo]).map(prep);
+  const byKey = new Map(library.map(t => [LN.keyOf(t), t]));
+  library.forEach(t => { const p = pmap.get(LN.keyOf(t)); if (p) { t.plays = Math.max(t.plays || 0, p.n); t.ms = p.ms; t.lastPlayed = p.last; } });
+  const link = list => list.map(t => { const k = LN.keyOf(t), hit = byKey.get(k); if (hit) { mergeInto(hit, t); return hit; } return prep(t); });
+  const linkRanked = list => { const seen = new Set(); return list.filter(t => { const k = LN.keyOf(t); if (seen.has(k)) return false; seen.add(k); return true; }).map(t => byKey.get(LN.keyOf(t)) || prep({...t})); };
+  const wrapped = {}; Object.entries(input.wrapped).forEach(([k, v]) => wrapped[k] = linkRanked(v));
+  const inspo = link(dedupe(input.inspo)), set = link(dedupe(input.set));
+  inspo.forEach(t => t.inInspo = true); set.forEach(t => t.inSet = true);
+
+  // display groups: top 5 tagged broad groups + Everything else + Untagged
+  const cnt = new Map(); library.forEach(t => { if (t.broad !== 'Untagged') cnt.set(t.broad, (cnt.get(t.broad) || 0) + 1); });
+  const top = [...cnt.entries()].sort((a, b) => b[1] - a[1]).map(x => x[0]).slice(0, 5); while (top.length < 5) top.push('(none)');
+  const groups = [...top, 'Everything else', 'Untagged'];
+  const gi = t => t.broad === 'Untagged' ? 6 : (top.indexOf(t.broad) >= 0 ? top.indexOf(t.broad) : 5);
+  [...library, ...inspo, ...set, ...Object.values(wrapped).flat()].forEach(t => t.g = gi(t));
+
+  const M = {library, wrapped, inspo, set, groups, hasFeatures: LN.hasFeatures(library), hasBpm: library.filter(t => t.bpm > 0).length >= 40 || library.filter(t => t.bpm > 0).length / Math.max(1, library.length) > .5};
+  M.hasPlays = pmap.size > 0 || library.some(t => t.plays > 0);
+  if (M.hasPlays) {
+    const all = [...pmap.values()];
+    M.playTotal = all.reduce((a, r) => a + r.n, 0) || library.reduce((a, t) => a + (t.plays || 0), 0);
+    M.playHours = all.reduce((a, r) => a + r.ms, 0) / 3600000;
+    const inLib = all.filter(r => byKey.has(LN.keyOf(r)));
+    M.savedPlayShare = all.length ? inLib.reduce((a, r) => a + r.n, 0) / Math.max(1, M.playTotal) : null;
+    M.playedNotSaved = all.filter(r => !byKey.has(LN.keyOf(r)) && r.n >= 3).sort((a, b) => b.n - a.n).slice(0, 300).map((r, i) => { const t = prep({id: r.id || 'np' + i, name: r.name, artists: r.artists, artist: r.artist, added: '', t: 0, y: 0, rel: 0, genres: [], bpm: 0, energy: null, valence: null, dance: null, acoustic: null, instr: null, speech: null, pop: 0, dur: 0, key: null, mode: null, camelot: '?'}); t.plays = r.n; t.ms = r.ms; t.g = gi(t); return t; });
+    M.historyFrom = all.map(r => r.first).filter(Boolean).sort()[0] || null;
+  }
+  const years = library.map(t => t.y).filter(Boolean);
+  M.firstYear = Math.min(...years); M.lastYear = Math.max(...years);
+  M.dated = years.length > library.length * .5;
+  M.tagged = library.filter(t => t.broad !== 'Untagged');
+  M.untaggedShare = 1 - M.tagged.length / library.length;
+  M.hasElectronic = library.filter(t => t.elec).length >= 25;
+  // artist stats
+  const lead = new Map(), any = new Map();
+  library.forEach(t => { if (t.artists[0]) lead.set(t.artists[0], (lead.get(t.artists[0]) || 0) + 1); t.artists.forEach(a => any.set(a, (any.get(a) || 0) + 1)); });
+  M.leadCount = lead; M.anyCount = any;
+  M.oneOffShare = library.filter(t => (lead.get(t.artists[0]) || 0) <= 2).length / library.length;
+  M.top10Share = [...lead.values()].sort((a, b) => b - a).slice(0, 10).reduce((a, b) => a + b, 0) / library.length;
+  // DJ pool
+  const since = (M.dated ? M.lastYear : 9999) - 2;
+  M.poolSince = M.dated ? since : null;
+  M.pool = library.filter(t => t.elec && (!M.dated || t.y >= since) && t.bpm >= 116 && t.bpm <= 142 && (t.dance ?? 1) >= .55);
+  M.lanes = LN.laneStats(M.pool);
+  M.shortlist = LN.shortlist(library, M);
+  return M;
+};
+
+LN.q = (arr, p) => { const a = [...arr].sort((x, y) => x - y); if (!a.length) return 0; const i = (a.length - 1) * p, lo = Math.floor(i), hi = Math.ceil(i); return a[lo] + (a[hi] - a[lo]) * (i - lo); };
+LN.avg = (L, f) => { const v = L.map(f).filter(x => x != null && isFinite(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0; };
+LN.median = a => LN.q(a, .5);
+LN.feats = L => ({n: L.length, bpm: Math.round(LN.median(L.map(t => t.bpm).filter(Boolean))), energy: LN.avg(L, t => t.energy), valence: LN.avg(L, t => t.valence), dance: LN.avg(L, t => t.dance), acoustic: LN.avg(L, t => t.acoustic), instr: LN.avg(L, t => t.instr), speech: LN.avg(L, t => t.speech), minor: L.filter(t => t.mode === 0).length / Math.max(1, L.length), vocal: L.filter(t => (t.instr ?? 0) < .3).length / Math.max(1, L.length), dur: Math.round(LN.median(L.map(t => t.dur).filter(Boolean)))});
+
+LN.laneStats = pool => {
+  const by = new Map(); pool.forEach(t => { if (!t.lane) return; if (!by.has(t.lane)) by.set(t.lane, []); by.get(t.lane).push(t); });
+  return [...by.entries()].filter(([, s]) => s.length >= Math.min(5, Math.max(2, pool.length / 40))).map(([lane, s]) => {
+    const ac = new Map(); s.forEach(t => t.artists.forEach(a => ac.set(a, (ac.get(a) || 0) + 1)));
+    return {lane, n: s.length, lo: Math.round(LN.q(s.map(t => t.bpm), .2)), hi: Math.round(LN.q(s.map(t => t.bpm), .8)), med: Math.round(LN.median(s.map(t => t.bpm))), energy: LN.avg(s, t => t.energy), valence: LN.avg(s, t => t.valence), artists: [...ac.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(x => x[0])};
+  }).sort((a, b) => b.n - a.n);
+};
+
+const MELODIC = ['Melodic/organic house', 'Afro house', 'Deep house', 'Downtempo/chill'];
+LN.MELODIC = MELODIC;
+LN.shortlist = (library, M) => {
+  const since = M.dated ? M.lastYear - 2 : -1;
+  const seen = new Set();
+  const c = library.filter(t => t.elec && (!M.dated || t.y >= since) && (t.dance ?? 1) >= .58 && t.bpm).filter(t => !seen.has(t.name) && seen.add(t.name));
+  const used = new Set(); const take = (list, n) => list.filter(t => !used.has(t)).sort((a, b) => b.pop - a.pop).slice(0, n).map(t => (used.add(t), t));
+  const op = take(c.filter(t => MELODIC.includes(t.lane) && t.bpm >= 119 && t.bpm <= 125.5 && t.dur >= 200), 10);
+  const bu = take(c.filter(t => ['Stutter house', 'House', 'Disco/French house', 'Deep house'].includes(t.lane) && t.bpm > 125.5 && t.bpm <= 131), 11);
+  const pk = take(c.filter(t => ['Tech/bass house', 'UK garage/DnB', 'Stutter house', 'Electronica', 'Techno'].includes(t.lane) && t.bpm >= 129 && t.bpm <= 137 && (t.energy ?? 0) >= .75), 9);
+  const tag = (L, p) => L.sort((a, b) => a.bpm - b.bpm).map(t => ({song: t, phase: p}));
+  return [...tag(op, 'Opener'), ...tag(bu, 'Build'), ...tag(pk, 'Peak')];
+};
+
+/* camelot helpers */
+LN.camParse = k => { const m = /^(\d+)([AB])$/.exec(k || ''); return m ? [+m[1], m[2]] : null; };
+LN.camCompat = (a, b) => { const x = LN.camParse(a), y = LN.camParse(b); if (!x || !y) return false; if (x[0] === y[0]) return true; if (x[1] !== y[1]) return false; const d = Math.abs(x[0] - y[0]); return d === 1 || d === 11; };
+LN.camNeighbors = k => { const p = LN.camParse(k); if (!p) return []; const [n, l] = p; const w = v => ((v - 1 + 12) % 12) + 1; return [w(n - 1) + l, w(n + 1) + l, n + (l === 'A' ? 'B' : 'A')]; };
+
+/* set flags + phases */
+LN.flagOf = t => {
+  const g = (t.g2 || []).join(' ');
+  if (!t.bpm) return ['No data', 'Spotify has no tempo for this one. Check it in your DJ software.'];
+  if (t.bpm < 110) return ['Check tempo', `Reads as ${t.bpm} BPM, which may be half speed (about ${t.bpm * 2}). If it really is this slow, use it as a breakdown moment or cut it.`];
+  if (/\brap\b|trap/.test(g) && !/house/.test(g)) return ['Surprise moment', `A rap or trap track at ${t.bpm} BPM. Don't blend it. Cut it in on a drop as a deliberate switch.`];
+  if (t.bpm > 137) return ['Above range', `${t.bpm} BPM is above a typical house range. Play it as a tempo jump after a drop, or check whether your DJ software reads it lower.`];
+  if (t.bpm < 118) return ['Below range', `${t.bpm} BPM is on the slow side. Use it to open, or as a breather before building back up.`];
+  if (t.bpm >= 134 && (t.energy ?? 1) < .6) return ['Low energy', `Energy ${(t.energy ?? 0).toFixed(2)} is low for ${t.bpm} BPM, so it would stall a peak.`];
+  if ((t.energy ?? 1) < .5) return ['Low energy', `Energy ${(t.energy ?? 0).toFixed(2)}, low for a dance set. Better as an intro or an emotional pause.`];
+  return null;
+};
+LN.phaseOf = t => {
+  if (t.energy == null) return t.bpm < 125 ? 'Opener' : t.bpm >= 130 ? 'Peak' : 'Build';
+  if (t.bpm < 126 || (t.bpm <= 128 && (MELODIC.includes(t.lane) || (t.energy ?? 1) < .65))) return 'Opener';
+  if ((t.bpm >= 131 && (t.energy ?? 0) >= .85) || ((t.lane === 'UK garage/DnB' || t.bpm >= 134) && (t.energy ?? 0) >= .75)) return 'Peak';
+  return 'Build';
+};
+LN.mixesInto = (seed, pool, n) => pool.filter(s => s !== seed && s.bpm && Math.abs(s.bpm - seed.bpm) <= Math.max(3, seed.bpm * .04) && LN.camCompat(seed.camelot, s.camelot)).sort((a, b) => (Math.abs(a.bpm - seed.bpm) - Math.abs(b.bpm - seed.bpm)) || (b.pop - a.pop)).slice(0, n);
+LN.similar = (seed, pool, n) => pool.filter(s => s !== seed && s.bpm > 0).map(s => [Math.abs(s.bpm - seed.bpm) / 4 + Math.abs((s.energy ?? .5) - (seed.energy ?? .5)) * 6 + Math.abs((s.valence ?? .5) - (seed.valence ?? .5)) * 4 + (s.g === seed.g ? 0 : 1.5) + (s.lane && s.lane === seed.lane ? -.5 : 0), s]).sort((a, b) => a[0] - b[0]).slice(0, n).map(x => x[1]);
+
+/* planner */
+const PH = ['Opener', 'Build', 'Peak']; LN.PH = PH;
+const stepCost = (a, b, p) => { const d = b.bpm - a.bpm; return (d >= 0 ? d * .6 : -d * 3) + (LN.camCompat(a.camelot, b.camelot) ? 0 : 2.5) + ((b.energy ?? 0) < (a.energy ?? 0) - .1 ? (p === 'Peak' ? 2 : 1) : 0); };
+LN.plan = (cands, minutes) => {
+  const play = s => Math.min(Math.max(s.dur * .75, 90), 200);
+  const avgPlay = cands.length ? LN.avg(cands, play) : 135;
+  const N = Math.max(3, Math.min(cands.length, Math.round(minutes * 60 / avgPlay)));
+  const q = {Opener: Math.max(1, Math.round(N * .25)), Peak: Math.max(1, Math.round(N * .3))}; q.Build = Math.max(1, N - q.Opener - q.Peak);
+  const byP = {}; PH.forEach(p => byP[p] = cands.filter(s => s.phase === p));
+  let extra = 0; PH.forEach(p => { const sh = Math.max(0, q[p] - byP[p].length); q[p] -= sh; extra += sh; });
+  for (const p of ['Build', 'Peak', 'Opener']) { const add = Math.min(byP[p].length - q[p], extra); q[p] += add; extra -= add; }
+  const conn = s => cands.filter(o => o !== s && LN.camCompat(o.camelot, s.camelot) && Math.abs(o.bpm - s.bpm) <= 4).length;
+  const fit = {Opener: s => (MELODIC.includes(s.lane) ? 1 : 0) - (s.energy ?? .5) + (126 - s.bpm) * .15, Build: s => (s.lane === 'Stutter house' || s.lane === 'Tech/bass house' ? .5 : 0), Peak: s => (s.energy ?? .5) * 2};
+  const groups = PH.map(p => [...byP[p]].sort((a, b) => (fit[p](b) + conn(b) * .25) - (fit[p](a) + conn(a) * .25)).slice(0, q[p]));
+  let beam = [{seq: [], cost: 0}]; const total = groups.flat().length;
+  for (let step = 0; step < total; step++) {
+    let gi = 0, acc = 0; while (gi < groups.length && step >= acc + groups[gi].length) { acc += groups[gi].length; gi++; }
+    const next = [];
+    beam.forEach(st => { const used = new Set(st.seq); const prev = st.seq[st.seq.length - 1];
+      groups[gi].filter(s => !used.has(s)).forEach(s => next.push({seq: [...st.seq, s], cost: st.cost + (prev ? stepCost(prev, s, PH[gi]) : (s.bpm - 118) * .3 + (s.energy ?? 0))})); });
+    next.sort((a, b) => a.cost - b.cost); beam = next.slice(0, 50);
+  }
+  return {seq: beam[0] ? beam[0].seq : [], N, q, byP, play};
+};
+LN.transNote = (a, b) => {
+  const d = b.bpm - a.bpm, k = a.camelot === b.camelot ? 'same key' : LN.camCompat(a.camelot, b.camelot) ? a.camelot + '→' + b.camelot : null;
+  const bt = (d >= 0 ? '+' : '') + d + ' BPM';
+  if (k && Math.abs(d) <= 4) return [`${bt} · ${k} ✓`, 'ok', 'Smooth blend: tempo and key line up.'];
+  if (!k && Math.abs(d) <= 4) return [`${bt} · key clash`, 'warn', `Keys ${a.camelot} and ${b.camelot} clash. Blend on drums only with the bass cut, or cut in on the drop.`];
+  return [`${bt}${k ? ' · ' + k : ' · key clash'}`, 'warn', `A ${Math.abs(d)} BPM jump. Use a quick cut or echo out rather than a long blend.`];
+};
+
+/* ---- template insights ---- */
+LN.moodOf = t => (t.valence ?? .5) < .4 ? ((t.energy ?? .5) >= .6 ? 0 : 2) : ((t.energy ?? .5) >= .6 ? 1 : 3);
+LN.QUADS = [
+  {n: 'Sad bangers', d: 'Dark mood, high energy', head: ['Sad songs you can ', 'dance', ' to.']},
+  {n: 'Feel-good energy', d: 'Happy and intense', head: ['Feel-good energy, turned ', 'all the way up', '.']},
+  {n: 'Melancholy calm', d: 'Sad and soft', head: ['Soft, slow and a little ', 'blue', '.']},
+  {n: 'Sunny and mellow', d: 'Happy and relaxed', head: ['Easygoing, warm and ', 'bright', '.']},
+];
+LN.insights = M => {
+  const L = M.library, I = {};
+  const qc = [0, 0, 0, 0]; L.forEach(t => qc[LN.moodOf(t)]++);
+  I.quadShares = qc.map(c => c / L.length);
+  const fv = LN.avg(L, t => t.valence), fe = LN.avg(L, t => t.energy), fd = LN.avg(L, t => t.dance);
+  I.topQuad = fv < .45 ? ((fe >= .6 || fd >= .62) ? 0 : 2) : ((fe >= .6 || fd >= .65) ? 1 : 3);
+  I.headline = LN.QUADS[I.topQuad].head;
+  if (!M.hasFeatures) { const gc = new Array(5).fill(0); L.forEach(t => { if (t.g < 5) gc[t.g]++; }); const tg = gc.indexOf(Math.max(...gc)); I.headline = gc[tg] ? [`${L.length.toLocaleString()} songs, led by `, M.groups[tg].toLowerCase(), '.'] : [`${L.length.toLocaleString()} songs, `, 'decoded', '.']; }
+  const share = (list, g) => { const t = list.filter(x => x.g !== 6); return t.length ? t.filter(x => x.g === g).length / t.length : 0; };
+  I.groupShare = M.groups.slice(0, 6).map((_, g) => share(L, g));
+  if (M.dated && M.lastYear > M.firstYear) {
+    const f = L.filter(t => t.y === M.firstYear), l = L.filter(t => t.y === M.lastYear);
+    const deltas = M.groups.slice(0, 5).map((_, g) => share(l, g) - share(f, g));
+    const up = deltas.indexOf(Math.max(...deltas)), down = deltas.indexOf(Math.min(...deltas));
+    I.shift = {up, down, upFrom: share(f, up), upTo: share(l, up), downFrom: share(f, down), downTo: share(l, down)};
+  }
+  // eras: dominant group per year, merged
+  if (M.dated) {
+    const ys = []; for (let y = M.firstYear; y <= M.lastYear; y++) { const s = L.filter(t => t.y === y && t.g !== 6); if (s.length < 5) continue; const c = new Array(6).fill(0); s.forEach(t => c[t.g]++); const dom = c.indexOf(Math.max(...c)); const ac = new Map(); L.filter(t => t.y === y).forEach(t => t.artists[0] && ac.set(t.artists[0], (ac.get(t.artists[0]) || 0) + 1));
+      const isE = M.groups[dom] === 'Electronic'; const lc = new Map(); s.filter(t => t.elec && t.lane).forEach(t => lc.set(t.lane, (lc.get(t.lane) || 0) + 1)); const tl = [...lc.entries()].sort((a, b) => b[1] - a[1])[0];
+      ys.push({y, dom, key: isE && tl ? 'E:' + tl[0] : 'G:' + dom, artists: [...ac.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0]), lanes: isE ? s.filter(t => t.elec && t.lane) : []}); }
+    const eras = []; ys.forEach(r => { const last = eras[eras.length - 1]; if (last && last.key === r.key && r.y - last.to <= 1) { last.to = r.y; r.artists.forEach(a => last.am.set(a, (last.am.get(a) || 0) + 1)); last.lanes.push(...r.lanes); } else eras.push({from: r.y, to: r.y, dom: r.dom, key: r.key, am: new Map(r.artists.map(a => [a, 1])), lanes: [...r.lanes]}); });
+    I.eras = eras.map(e => { const lc = new Map(); e.lanes.forEach(t => lc.set(t.lane, (lc.get(t.lane) || 0) + 1)); const topLane = [...lc.entries()].sort((a, b) => b[1] - a[1])[0];
+      return {from: e.from, to: e.to, dom: e.dom, label: (e.from === e.to ? e.from : e.from + '–' + String(e.to).slice(2)), artists: [...e.am.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0]), lane: topLane && topLane[1] >= 5 ? topLane[0] : null}; });
+  }
+  // DJ
+  if (M.lanes.length) {
+    const core = M.lanes[0]; I.coreLane = core;
+    I.below = M.lanes.slice(1).filter(l => l.med < core.med - 1).sort((a, b) => b.n - a.n)[0];
+    I.above = M.lanes.slice(1).filter(l => l.med > core.med + 1).sort((a, b) => b.n - a.n)[0];
+  }
+  // Producing
+  if (M.inspo.length) {
+    const fI = LN.feats(M.inspo), fL = LN.feats(L); I.fI = fI; I.fL = fL;
+    const lc = new Map(); M.inspo.forEach(t => t.lane && lc.set(t.lane, (lc.get(t.lane) || 0) + 1));
+    I.inspoLane = [...lc.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || M.groups[M.inspo[0]?.g] || 'music';
+    I.inspoTone = fI.valence < .3 ? 'Dark' : fI.valence < .42 ? 'Bittersweet' : fI.valence < .55 ? 'Warm' : 'Bright';
+    I.inspoRefs = LN.refBoard(M.inspo, fI);
+  }
+  return I;
+};
+LN.refBoard = (L, f) => {
+  const picks = [], used = new Set();
+  const add = (t, tag, why) => { if (t && !used.has(t)) { used.add(t); picks.push({t, tag, why}); } };
+  const by = (fn, dir = -1) => [...L].filter(t => t.bpm).sort((a, b) => dir * ((fn(a) ?? 0) - (fn(b) ?? 0)))[0];
+  const center = [...L].filter(t => t.bpm).sort((a, b) => (Math.abs(a.bpm - f.bpm) / 5 + Math.abs((a.energy ?? 0) - f.energy) * 4 + Math.abs((a.valence ?? 0) - f.valence) * 4) - (Math.abs(b.bpm - f.bpm) / 5 + Math.abs((b.energy ?? 0) - f.energy) * 4 + Math.abs((b.valence ?? 0) - f.valence) * 4))[0];
+  add(center, 'Your center', 'The track closest to your inspo average on tempo, energy and mood. Treat it as the blueprint for your sound.');
+  const e = by(t => t.energy); add(e, 'Peak energy', `Energy ${(e?.energy ?? 0).toFixed(2)}, the highest in your list. Study what makes its drop hit hardest.`);
+  const s = by(t => t.dur, 1); add(s, 'Short-form song', `A full track in ${Math.floor((s?.dur || 0) / 60)}:${String((s?.dur || 0) % 60).padStart(2, '0')}. Study how intro, hook and drop fit into radio length.`);
+  const lg = by(t => t.dur); add(lg, 'Long build', `${Math.floor((lg?.dur || 0) / 60)}:${String((lg?.dur || 0) % 60).padStart(2, '0')} long. Study how it builds tension slowly and releases it.`);
+  const ins = by(t => t.instr); if ((ins?.instr ?? 0) > .5) add(ins, 'Instrumental lead', `${Math.round((ins.instr) * 100)}% instrumental. Study how synths carry the melody without a singer.`);
+  const sp = by(t => t.speech); if ((sp?.speech ?? 0) > .15) add(sp, 'Vocal-forward', 'The most spoken or rapped vocal in your list. Study how the vocal sits on top of the groove.');
+  const lowv = by(t => t.valence, 1); add(lowv, 'Emotional low', `Valence ${(lowv?.valence ?? 0).toFixed(2)}, the darkest track here. Study which chords and sounds create that mood.`);
+  const majority = f.minor > .5 ? 0 : 1; const odd = L.find(t => t.mode === 1 - majority && !used.has(t)); if (odd) add(odd, majority === 0 ? 'Brighter key' : 'Minor-key turn', majority === 0 ? 'A major-key track in a mostly minor list. Study how it keeps the mood anyway.' : 'A minor-key track in a mostly major list. Study how it shifts the mood.');
+  const ac = by(t => t.acoustic); if ((ac?.acoustic ?? 0) > .3) add(ac, 'Organic texture', 'The most acoustic-sounding track in your list. Study how live or organic sounds sit inside an electronic groove.');
+  return picks.slice(0, 9);
+};
+})();
+
+/* ================= PARSERS: every supported export → tracks or plays ================= */
+(function(){
+const CAM = {'0,1':'8B','1,1':'3B','2,1':'10B','3,1':'5B','4,1':'12B','5,1':'7B','6,1':'2B','7,1':'9B','8,1':'4B','9,1':'11B','10,1':'6B','11,1':'1B','0,0':'5A','1,0':'12A','2,0':'7A','3,0':'2A','4,0':'9A','5,0':'4A','6,0':'11A','7,0':'6A','8,0':'1A','9,0':'8A','10,0':'3A','11,0':'10A'};
+const NOTE = {c:0,'c#':1,db:1,d:2,'d#':3,eb:3,e:4,f:5,'f#':6,gb:6,g:7,'g#':8,ab:8,a:9,'a#':10,bb:10,b:11};
+const splitArtists = s => String(s || '').split(/\s*(?:;|,\s(?=[A-Z0-9])|\s&\s|\sfeat\.?\s|\sft\.?\s|\sx\s)\s*/i).map(x => x.trim()).filter(Boolean);
+const blank = () => ({id: '', name: '', artists: [], artist: '', added: '', t: 0, y: 0, rel: 0, genres: [], bpm: 0, energy: null, valence: null, dance: null, acoustic: null, instr: null, speech: null, pop: 0, dur: 0, key: null, mode: null, camelot: '?', plays: 0});
+const setAdded = (t, d) => { const s = String(d || ''); const iso = /^\d{4}-\d\d-\d\d/.test(s) ? s.slice(0, 10) : (() => { const x = Date.parse(s); return isFinite(x) ? new Date(x).toISOString().slice(0, 10) : ''; })(); if (iso && !iso.startsWith('1970')) { t.added = iso; t.t = Date.parse(iso); t.y = +iso.slice(0, 4); } };
+const mk = (o, i, pre) => { const t = Object.assign(blank(), o); t.artists = t.artists.length ? t.artists : splitArtists(o.artist); t.artist = t.artists.join(', '); if (!t.id) t.id = pre + i; return t; };
+// musical key text → camelot
+LN.keyToCamelot = k => {
+  const s = String(k || '').trim(); if (!s) return {key: null, mode: null, camelot: '?'};
+  let m = /^0?(\d{1,2})\s*([AB])$/i.exec(s); if (m) { const cam = (+m[1]) + m[2].toUpperCase(); const e = Object.entries(CAM).find(([, v]) => v === cam); return e ? {key: +e[0].split(',')[0], mode: +e[0].split(',')[1], camelot: cam} : {key: null, mode: null, camelot: '?'}; }
+  m = /^([A-Ga-g])([#b♯♭]?)\s*(m|min|minor|maj|major)?$/.exec(s.replace(/\s+/g, '')); if (!m) return {key: null, mode: null, camelot: '?'};
+  const n = NOTE[(m[1] + (m[2] || '').replace('♯', '#').replace('♭', 'b')).toLowerCase()]; if (n == null) return {key: null, mode: null, camelot: '?'};
+  const mode = m[3] && /^m(in|inor)?$/i.test(m[3]) ? 0 : 1; return {key: n, mode, camelot: CAM[n + ',' + mode]};
+};
+
+/* each parser returns [{label, kind, rows?, plays?, role}] */
+function exportifyOrCsv(name, text){
+  const res = Papa.parse(String(text).replace(/^﻿/, ''), {header: true, skipEmptyLines: true});
+  const f = (res.meta.fields || []).map(x => x.toLowerCase().trim());
+  const has = n => f.includes(n);
+  if (has('track uri') || has('spotify id') || (has('track name') && has('artist name(s)'))) {
+    const rows = LN.normRows(res.data);
+    return [{label: 'Exportify playlist', kind: 'exportify', rows, role: LN.guessRole(name, rows)}];
+  }
+  // Last.fm with headers (uts / utc_time / date + artist + track)
+  if ((has('uts') || has('utc_time') || has('date') || has('timestamp')) && has('artist') && (has('track') || has('name'))) {
+    const pick = (r, ...ks) => { for (const k of ks) for (const key of Object.keys(r)) if (key.toLowerCase().trim() === k && r[key]) return r[key]; return ''; };
+    const plays = res.data.map(r => { const uts = pick(r, 'uts', 'timestamp'); const ts = uts && /^\d+$/.test(uts) ? new Date(+uts * (uts.length > 11 ? 1 : 1000)).toISOString() : (() => { const d = Date.parse(pick(r, 'utc_time', 'date')); return isFinite(d) ? new Date(d).toISOString() : ''; })();
+      const artist = pick(r, 'artist'); return {name: pick(r, 'track', 'name'), artist, artists: splitArtists(artist), ts, ms: 0}; }).filter(p => p.name);
+    return [{label: 'Last.fm scrobbles', kind: 'lastfm', plays, role: 'plays'}];
+  }
+  // TuneMyMusic / Soundiiz / generic playlist CSV
+  const col = (...alts) => (res.meta.fields || []).find(x => alts.includes(x.toLowerCase().trim()));
+  const cName = col('track name', 'title', 'track', 'name', 'song', 'song name'), cArt = col('artist name', 'artist', 'artists', 'artist(s)'), cPl = col('playlist name', 'playlist'), cAlb = col('album', 'album name'), cGen = col('genre', 'genres');
+  if (cName && cArt) {
+    const byPl = new Map();
+    res.data.forEach((r, i) => { const pl = cPl ? r[cPl] || 'Playlist' : name.replace(/\.csv$/i, ''); if (!byPl.has(pl)) byPl.set(pl, []); byPl.get(pl).push(mk({name: r[cName], artist: r[cArt], genres: cGen && r[cGen] ? String(r[cGen]).split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : []}, i, 'tm')); });
+    return [...byPl.entries()].map(([pl, rows]) => ({label: `Playlist "${pl}" (TuneMyMusic / Soundiiz)`, kind: 'playlist', rows: rows.filter(t => t.name), role: LN.guessRole(pl, rows)}));
+  }
+  // headerless Last.fm (artist, album, track, date)
+  const raw = Papa.parse(String(text).replace(/^﻿/, ''), {header: false, skipEmptyLines: true}).data;
+  if (raw.length && raw[0].length === 4 && isFinite(Date.parse(raw[0][3]))) {
+    const plays = raw.map(r => ({name: r[2], artist: r[0], artists: splitArtists(r[0]), ts: (() => { const d = Date.parse(r[3]); return isFinite(d) ? new Date(d).toISOString() : ''; })(), ms: 0})).filter(p => p.name);
+    return [{label: 'Last.fm scrobbles', kind: 'lastfm', plays, role: 'plays'}];
+  }
+  return [];
+}
+
+function spotifyJson(name, data){
+  const out = [];
+  if (Array.isArray(data) && data.length && ('master_metadata_track_name' in data[0] || 'ts' in data[0] && 'ms_played' in data[0])) {
+    const plays = data.filter(r => r.master_metadata_track_name).map(r => ({name: r.master_metadata_track_name, artist: r.master_metadata_album_artist_name || '', artists: splitArtists(r.master_metadata_album_artist_name), ts: r.ts, ms: r.ms_played || 0, id: (r.spotify_track_uri || '').split(':').pop() || undefined})).filter(p => p.ms >= 30000);
+    out.push({label: 'Spotify extended streaming history', kind: 'history', plays, role: 'plays'});
+  } else if (Array.isArray(data) && data.length && 'trackName' in data[0] && 'msPlayed' in data[0]) {
+    const plays = data.filter(r => r.trackName && r.msPlayed >= 30000).map(r => ({name: r.trackName, artist: r.artistName || '', artists: splitArtists(r.artistName), ts: r.endTime ? new Date(Date.parse(r.endTime.replace(' ', 'T') + 'Z')).toISOString() : '', ms: r.msPlayed}));
+    out.push({label: 'Spotify streaming history (past year)', kind: 'history', plays, role: 'plays'});
+  } else if (data && Array.isArray(data.tracks)) {
+    const rows = data.tracks.map((r, i) => mk({name: r.track, artist: r.artist, id: (r.uri || '').split(':').pop()}, i, 'lib'));
+    out.push({label: 'Spotify library (YourLibrary.json)', kind: 'splib', rows, role: 'library'});
+  } else if (data && Array.isArray(data.playlists)) {
+    data.playlists.forEach(p => { const rows = (p.items || []).filter(x => x.track).map((x, i) => mk({name: x.track.trackName, artist: x.track.artistName, id: (x.track.trackUri || '').split(':').pop()}, i, 'pl'));
+      if (rows.length) out.push({label: `Spotify playlist "${p.name}"`, kind: 'playlist', rows, role: LN.guessRole(p.name, rows) === 'library' ? 'extra' : LN.guessRole(p.name, rows), plName: p.name}); });
+  }
+  return out;
+}
+
+function xmlFile(name, text){
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  if (doc.querySelector('parsererror')) throw new Error('the XML is damaged or incomplete. Try exporting it again');
+  if (doc.querySelector('DJ_PLAYLISTS')) {
+    const rows = [...doc.querySelectorAll('COLLECTION > TRACK')].map((n, i) => { const a = k => n.getAttribute(k) || ''; const kc = LN.keyToCamelot(a('Tonality'));
+      const t = mk({id: 'rb' + (a('TrackID') || i), name: a('Name'), artist: a('Artist'), genres: a('Genre') ? a('Genre').split(/[,/]/).map(s => s.trim().toLowerCase()).filter(Boolean) : [], bpm: Math.round(parseFloat(a('AverageBpm')) || 0), dur: +a('TotalTime') || 0, rel: +a('Year') || 0, plays: +a('PlayCount') || 0, key: kc.key, mode: kc.mode, camelot: kc.camelot}, i, 'rb'); setAdded(t, a('DateAdded')); return t; }).filter(t => t.name);
+    const out = [{label: 'rekordbox collection', kind: 'rekordbox', rows, role: 'library'}];
+    const byId = new Map(rows.map(t => [t.id.replace(/^rb/, ''), t]));
+    [...doc.querySelectorAll('PLAYLISTS NODE[Type="1"]')].forEach(pl => { const r = [...pl.querySelectorAll('TRACK')].map(x => byId.get(x.getAttribute('Key'))).filter(Boolean); if (r.length) out.push({label: `rekordbox playlist "${pl.getAttribute('Name')}"`, kind: 'playlist', rows: r, role: LN.guessRole(pl.getAttribute('Name') || '', r) === 'library' ? 'skip' : LN.guessRole(pl.getAttribute('Name') || '', r) === 'extra' ? 'skip' : LN.guessRole(pl.getAttribute('Name') || '', r)}); });
+    return out;
+  }
+  const plist = doc.querySelector('plist > dict');
+  if (plist) {
+    const read = el => { if (!el) return null; if (el.tagName === 'dict') { const o = {}; const kids = [...el.children]; for (let i = 0; i < kids.length; i += 2) o[kids[i].textContent] = read(kids[i + 1]); return o; } if (el.tagName === 'array') return [...el.children].map(read); if (el.tagName === 'integer' || el.tagName === 'real') return +el.textContent; if (el.tagName === 'true') return true; if (el.tagName === 'false') return false; return el.textContent; };
+    const root = read(plist); const tracks = root.Tracks || {};
+    const rows = Object.values(tracks).filter(t => t && t.Name && (t.Kind || '').indexOf('video') < 0 && !t.Podcast).map((r, i) => { const kc = LN.keyToCamelot(''); const t = mk({id: 'am' + (r['Persistent ID'] || i), name: r.Name, artist: r.Artist || r['Album Artist'] || '', genres: r.Genre ? [String(r.Genre).toLowerCase()] : [], dur: Math.round((r['Total Time'] || 0) / 1000), rel: r.Year || 0, plays: r['Play Count'] || 0, bpm: r.BPM || 0, key: kc.key, mode: kc.mode}, i, 'am'); setAdded(t, r['Date Added']); return t; });
+    const out = [{label: 'Apple Music library', kind: 'apple', rows, role: 'library'}];
+    const byPid = new Map(rows.map(t => [t.id, t])); const byTid = new Map(Object.entries(tracks).map(([k, r]) => [String(r['Track ID'] || k), byPid.get('am' + r['Persistent ID'])]));
+    (root.Playlists || []).filter(p => !p.Master && !p['Distinguished Kind'] && p['Playlist Items'] && p['Playlist Items'].length && !p.Folder).forEach(p => { const r = p['Playlist Items'].map(x => byTid.get(String(x['Track ID']))).filter(Boolean); if (r.length && r.length < rows.length) { const g = LN.guessRole(p.Name || '', r); out.push({label: `Apple Music playlist "${p.Name}"`, kind: 'playlist', rows: r, role: g === 'library' || g === 'extra' ? 'skip' : g}); } });
+    return out;
+  }
+  return [];
+}
+
+/* entry point: File → Promise<[entries]> ; handles zip */
+LN.readFile = async function(file){
+  const name = file.name, low = name.toLowerCase();
+  if (low.endsWith('.zip')) {
+    if (typeof JSZip === 'undefined') return [{error: 'Could not open ZIP files in this browser. Unzip it and drop the files inside instead.'}];
+    const zip = await JSZip.loadAsync(file); const out = [];
+    for (const f of Object.values(zip.files)) { if (f.dir || !/\.(json|csv|xml)$/i.test(f.name) || /__MACOSX/.test(f.name)) continue; const text = await f.async('string'); out.push(...(await LN.readText(f.name.split('/').pop(), text))); }
+    return out.length ? out : [{error: `${name}: no music data found inside the ZIP.`}];
+  }
+  return LN.readText(name, await file.text());
+};
+LN.readText = async function(name, text){
+  const low = name.toLowerCase();
+  try {
+    if (low.endsWith('.json')) { if (/^(userdata|identity|inferences|marquee|searchqueries|follow|payments|wrapped|podcast|yourSoundCapsule)/i.test(name)) return []; return spotifyJson(name, JSON.parse(text)).map(e => ({...e, name})); }
+    if (low.endsWith('.xml')) return xmlFile(name, text).map(e => ({...e, name}));
+    return exportifyOrCsv(name, text).map(e => ({...e, name}));
+  } catch (e) { return [{error: `${name} couldn't be read (${e.message}).`}]; }
+};
+})();
+
+/* ================= DEMO: a made-up listener, generated deterministically ================= */
+LN.demo = function(){
+  let s = 20260929; const rnd = () => (s = (s * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const gauss = (m, sd) => { let u = 0, v = 0; while (!u) u = rnd(); while (!v) v = rnd(); return m + sd * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+  const ADJ = ['Velvet','Paper','Golden','Midnight','Silver','Neon','Quiet','Broken','Electric','Hollow','Lucky','Crystal','Faded','Wild','Slow','Lonely','Sunday','Blue','Honey','Static','Violet','Distant','Late','Tender','Restless'];
+  const NOUN = ['Hearts','Motel','Summer','Lights','Ocean','Mirrors','Rooms','Letters','Highway','Echoes','Satellites','Gardens','Weather','Tides','Signals','Windows','Dreams','Hours','Rivers','Ghosts','Parade','Fever','Streets','Horizon','Cassette'];
+  const FIRST = ['Mara','Juno','Theo','Nico','Isla','Remy','Kai','Luca','Ada','Rio','Wren','Soren','Noa','Elio','Vera','Otto','Lumi','Cleo','Arlo','Zadie'];
+  const LAST = ['Vale','Hart','Moreno','Sato','Lind','Okafor','Reyes','Kline','Marsh','Duval','Ashby','Novak','Brandt','Ferro','Quinn'];
+  const artistName = () => { const r = rnd(); return r < .35 ? pick(FIRST) + ' ' + pick(LAST) : r < .6 ? 'The ' + pick(ADJ) + ' ' + pick(NOUN) : r < .8 ? pick(ADJ) + ' ' + pick(NOUN) : pick(FIRST).toUpperCase(); };
+  const title = () => { const r = rnd(); return r < .4 ? pick(ADJ) + ' ' + pick(NOUN) : r < .6 ? pick(NOUN) : r < .8 ? pick(['Call Me','Stay','Hold On','Run','Fall','Wait','Come Back','Let Go']) + ' ' + pick(['Tonight','Again','Slowly','For Me','Anyway','Forever']) : pick(ADJ).toLowerCase() + ' ' + pick(NOUN).toLowerCase(); };
+  // style → [genre tags, bpm mean, sd, energy, valence, dance, acoustic, instr, speech, dur]
+  const ST = {
+    indie:   [['indie pop','bedroom pop'], 112, 18, .55, .55, .6, .35, .05, .05, 215],
+    pop:     [['pop','dance pop'], 118, 14, .68, .66, .68, .15, .01, .06, 200],
+    hiphop:  [['rap','hip hop'], 96, 22, .64, .58, .74, .15, .01, .22, 205],
+    rnb:     [['r&b','alternative r&b'], 98, 15, .5, .42, .66, .3, .02, .08, 210],
+    rock:    [['rock','alternative rock'], 124, 20, .75, .45, .5, .1, .05, .05, 230],
+    latin:   [['reggaeton','latin'], 96, 8, .74, .65, .78, .15, .01, .1, 200],
+    melodic: [['melodic house','organic house'], 122, 2, .66, .25, .68, .1, .6, .04, 320],
+    afro:    [['afro house','afro tech'], 121, 1.5, .74, .3, .74, .12, .45, .05, 300],
+    house:   [['house','deep house'], 124, 2, .72, .6, .76, .06, .35, .05, 240],
+    tech:    [['tech house','bass house'], 128, 2, .85, .66, .8, .02, .3, .06, 205],
+    stutter: [['stutter house','house'], 130, 3, .76, .5, .66, .1, .15, .07, 185],
+    ukg:     [['uk garage','bassline'], 135, 2, .84, .5, .72, .03, .2, .08, 200],
+  };
+  // era plan: year → style weights
+  const ERA = {2019: {indie: 4, pop: 3, hiphop: 3, rock: 2, rnb: 1}, 2020: {indie: 3, pop: 3, hiphop: 4, rnb: 2, latin: 1}, 2021: {hiphop: 4, rnb: 3, pop: 2, latin: 2, indie: 1}, 2022: {pop: 2, hiphop: 2, melodic: 3, afro: 2, indie: 2}, 2023: {melodic: 3, afro: 3, house: 2, pop: 2, hiphop: 2}, 2024: {house: 3, stutter: 3, tech: 2, melodic: 2, pop: 1, hiphop: 1}, 2025: {stutter: 4, tech: 3, house: 2, ukg: 1, melodic: 1, hiphop: 2, pop: 2}, 2026: {tech: 4, stutter: 3, ukg: 2, house: 2, afro: 1, pop: 2, hiphop: 2, rnb: 1}};
+  const perYear = {2019: 70, 2020: 95, 2021: 110, 2022: 115, 2023: 125, 2024: 135, 2025: 150, 2026: 120};
+  const artistsBy = {}; Object.keys(ST).forEach(k => artistsBy[k] = Array.from({length: 70}, artistName));
+  let id = 0;
+  const mk = (style, y, m) => {
+    const [g, bm, bsd, e, v, d, a, ins, sp, du] = ST[style];
+    const pool = artistsBy[style], art = [rnd() < .35 ? pool[Math.floor(rnd() * 5)] : pick(pool)]; if (rnd() < .2) art.push(pick(artistsBy[style]));
+    const key = Math.floor(rnd() * 12), mode = rnd() < (v < .4 ? .35 : .6) ? 1 : 0;
+    const tag = rnd() < .3 ? [] : g;
+    return {id: 'demo' + (id++), name: title(), artists: art, artist: art.join(', '), added: `${y}-${String(m).padStart(2, '0')}-${String(1 + Math.floor(rnd() * 27)).padStart(2, '0')}`,
+      rel: y - (rnd() < .15 ? Math.floor(rnd() * 25) : Math.floor(rnd() * 2)), genres: tag, bpm: Math.round(clamp(gauss(bm, bsd), 70, 170)),
+      energy: clamp(gauss(e, .1), .1, 1), valence: clamp(gauss(v, .15), .02, .98), dance: clamp(gauss(d, .08), .2, .98), acoustic: clamp(gauss(a, .1), 0, 1), instr: clamp(gauss(ins, .2), 0, 1), speech: clamp(gauss(sp, .04), .02, .6),
+      pop: Math.round(clamp(gauss(52, 15), 5, 92)), dur: Math.round(clamp(gauss(du, 35), 110, 560)), key, mode,
+      camelot: ({'0,1':'8B','1,1':'3B','2,1':'10B','3,1':'5B','4,1':'12B','5,1':'7B','6,1':'2B','7,1':'9B','8,1':'4B','9,1':'11B','10,1':'6B','11,1':'1B','0,0':'5A','1,0':'12A','2,0':'7A','3,0':'2A','4,0':'9A','5,0':'4A','6,0':'11A','7,0':'6A','8,0':'1A','9,0':'8A','10,0':'3A','11,0':'10A'})[key + ',' + mode]};
+  };
+  const library = [];
+  Object.entries(perYear).forEach(([y, n]) => { const w = ERA[y]; const keys = Object.keys(w), tot = keys.reduce((a, k) => a + w[k], 0);
+    for (let i = 0; i < n; i++) { let r = rnd() * tot, st = keys[0]; for (const k of keys) { r -= w[k]; if (r <= 0) { st = k; break; } } const m = +y === 2026 ? 1 + Math.floor(rnd() * 9) : 1 + Math.floor(rnd() * 12); library.push(mk(st, +y, m)); } });
+  library.forEach(t => { t.t = Date.parse(t.added); t.y = +t.added.slice(0, 4); });
+  library.sort((a, b) => a.t - b.t);
+  const wrapped = {};
+  for (let y = 2021; y <= 2025; y++) { const c = library.filter(t => t.y === y || (t.y === y - 1 && rnd() < .3)); wrapped[String(y)] = c.sort((a, b) => b.pop - a.pop + (rnd() - .5) * 30).slice(0, 60); }
+  const inspo = library.filter(t => ['melodic house', 'afro house'].some(g => (t.genres[0] || '').includes(g)) || (t.bpm >= 120 && t.bpm <= 124 && t.valence < .3 && t.y >= 2022)).slice(-45);
+  const set = library.filter(t => t.y >= 2025 && t.bpm >= 122 && t.bpm <= 136 && t.energy > .7).slice(-32);
+  return {library, wrapped, inspo, set, extra: []};
+};
+
+/* ================= APP: flow + rendering ================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pct = v => Math.round(v) + '%';
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, parent){ const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const fmtDate = d => d ? MONTHS[+d.slice(5,7)-1] + ' ' + d.slice(0,4) : '';
+const fmtDur = s => Math.floor(s/60) + ':' + String(Math.round(s%60)).padStart(2,'0');
+const f2 = v => (v ?? 0).toFixed(2);
+const GVAR = ['--s1','--s2','--s3','--s4','--s5','--s6','--s7'];
+let M = null, I = null, CHOSEN = [], IS_DEMO = false, NOTICES = [], DEMO_MODE = false;
+
+/* ---------- views ---------- */
+function view(id){ ['landing','setup','report'].forEach(v => $('#'+v).hidden = v !== id); $('#restart').hidden = id === 'landing'; window.scrollTo({top:0}); }
+$('#heroBars').innerHTML = Array.from({length:40}, (_,i) => `<i style="height:${Math.round(25 + 70*Math.abs(Math.sin(i*.55)*Math.cos(i*.17)))}%"></i>`).join('');
+function setDemoMode(on){
+  DEMO_MODE = on; FILES = [];
+  if (on) { const D = LN.demo(); const e = (label, rows, role) => ({name: 'demo', label, kind: 'exportify', rows, role, feat: true, bpm: true});
+    FILES.push(e('Demo: Liked Songs', D.library, 'library'));
+    Object.keys(D.wrapped).forEach(y => FILES.push(e(`Demo: Your Top Songs ${y}`, D.wrapped[y], 'wrapped:' + y)));
+    FILES.push(e('Demo: Inspiration playlist', D.inspo, 'inspo'), e('Demo: DJ set playlist', D.set, 'set')); }
+  ['#srcs','#srcTitle','#drop','#addIntro','#demo2'].forEach(q => $(q).hidden = on); $('#demoBanner').hidden = !on;
+  $('#addTitle').textContent = on ? 'The demo library' : 'Add your music library';
+  $('#build').textContent = on ? 'See demo report' : 'Build my report';
+  renderFiles();
+}
+$('#goUpload').onclick = () => { setDemoMode(false); view('setup'); };
+$('#goDemo').onclick = $('#demo2').onclick = () => { setDemoMode(true); view('setup'); };
+$('#useOwn').onclick = () => setDemoMode(false);
+$('#demoBuild').onclick = () => { closeDrawer(); setDemoMode(false); view('setup'); };
+$('#restart').onclick = () => { closeDrawer(); setDemoMode(false); view('landing'); };
+
+/* ---------- setup ---------- */
+let FILES = []; // {name, rows, role}
+const ROLE_LABEL = {library:'Main library', inspo:'Inspiration playlist (Producing)', set:'DJ set playlist', plays:'Listening history', skip:"Don't use"};
+const chosen = () => [...document.querySelectorAll('#picks input:checked')].map(i => i.value);
+document.querySelectorAll('#picks input').forEach(i => i.addEventListener('change', updateNeed));
+const roleName = r => r.startsWith('wrapped:') ? (r === 'wrapped:All-time' ? 'All-time top songs' : 'Your Top Songs ' + r.slice(8)) : ROLE_LABEL[r];
+function roleOpts(cur, kind){
+  const o = r => `<option value="${r}" ${r === cur ? 'selected' : ''}>${roleName(r)}</option>`;
+  if (kind === 'history' || kind === 'lastfm') return ['plays', 'skip'].map(o).join('');
+  // Wrapped playlists exist from 2016; the current year's arrives in December
+  const now = new Date(), last = now.getMonth() >= 11 ? now.getFullYear() : now.getFullYear() - 1;
+  const years = ['wrapped:All-time']; for (let y = last; y >= 2016; y--) years.push('wrapped:' + y);
+  if (cur.startsWith('wrapped:') && !years.includes(cur)) years.unshift(cur);
+  return ['library', 'inspo', 'set'].map(o).join('') + `<optgroup label="Spotify Wrapped">${years.map(o).join('')}</optgroup>` + o('skip');
+}
+function renderFiles(){
+  $('#files').innerHTML = FILES.map((f,i) => `<div class="file"><span class="n">${f.kind === 'exportify' && f.name !== 'demo' ? esc(f.name) : esc(f.label) + (f.name === 'demo' ? '' : `<br><span class="a" style="font-weight:400">${esc(f.name)}</span>`)}</span>${DEMO_MODE ? `<span class="chip" style="--c:var(--accent)">${esc(roleName(f.role))}</span>` : `<select data-i="${i}" aria-label="How to use ${esc(f.label)}">${roleOpts(f.role, f.kind)}</select>`}<span class="a">${f.plays ? f.plays.length.toLocaleString() + ' plays' : f.rows.length.toLocaleString() + ' tracks'}${f.rows ? (f.feat ? ' · tempo and mood ✓' : f.bpm ? ' · tempo and key ✓, no mood scores' : ' · no tempo or mood data') : ''}</span></div>`).join('');
+  $('#files').querySelectorAll('select').forEach(s => s.onchange = () => { FILES[+s.dataset.i].role = s.value; updateNeed(); });
+  updateNeed();
+}
+function updateNeed(){
+  const ch = chosen(), has = r => FILES.some(f => f.role === r || (r === 'wrapped' && f.role.startsWith('wrapped:')));
+  const libOK = has('library') || FILES.some(f => f.role === 'plays');
+  const rows = [[libOK ? 'ok' : 'miss', libOK ? '✓' : '•', '<b>Your main library</b>: Liked Songs from Exportify, or a library from any source below. Needed for every report.']];
+  if (ch.includes('listening')) rows.push([has('wrapped') ? 'ok' : 'opt', has('wrapped') ? '✓' : '+', '<b>Your Top Songs</b> playlists (Spotify Wrapped), optional. Adds the Wrapped memory lane.']);
+  if (ch.includes('dj')) rows.push([has('set') ? 'ok' : 'opt', has('set') ? '✓' : '+', '<b>A DJ set playlist</b>, optional. Tracks you want to play. Without it, the planner uses suggestions from your library.']);
+  if (ch.includes('producing')) rows.push([has('inspo') ? 'ok' : 'miss', has('inspo') ? '✓' : '•', '<b>An inspiration playlist</b>: tracks that sound like what you\'d want to make. Needed for the Producing report.']);
+  $('#need').innerHTML = rows.map(r => `<div class="${r[0]}"><i>${r[1]}</i><span>${r[2]}</span></div>`).join('');
+  const used = FILES.filter(f => f.role !== 'skip' && f.rows);
+  const anyFeat = used.some(f => f.feat), anyBpm = used.some(f => f.feat || f.bpm);
+  const warns = [];
+  if (!ch.length) warns.push('Pick at least one report.');
+  if (used.length && ch.includes('dj') && !anyBpm) warns.push('None of these files include tempo (BPM), so the DJ report will be skipped. Add Exportify CSVs or a rekordbox collection to unlock it.');
+  if (used.length && ch.includes('producing') && has('inspo') && !FILES.some(f => f.role === 'inspo' && f.feat)) warns.push('Your inspiration playlist has no tempo or mood data, so the Producing report will be skipped. Export that playlist with Exportify to unlock it.');
+  if (ch.includes('producing') && !has('inspo') && FILES.length) warns.push("No inspiration playlist yet, so the Producing report will be skipped. Set a file's type to \"Inspiration playlist\" if you have one.");
+  $('#setupWarn').innerHTML = warns.length ? `<div class="warnbox">${warns.map(esc).join('<br>')}</div>` : '';
+  $('#build').disabled = !(libOK && ch.length);
+}
+async function addFiles(list){
+  const arr = [...list]; const errs = [];
+  $('#setupWarn').innerHTML = '<div class="warnbox" style="border-color:var(--line)">Reading your files…</div>';
+  for (const file of arr) {
+    let entries = [];
+    try { entries = await LN.readFile(file); } catch (e) { errs.push(`${file.name} couldn't be read.`); continue; }
+    if (!entries.length) errs.push(`${file.name} doesn't look like a supported export. Check the source guides above.`);
+    entries.forEach(e => { if (e.error) { errs.push(e.error); return; } if ((e.rows && e.rows.length) || (e.plays && e.plays.length)) FILES.push({name: e.name || file.name, label: e.label, kind: e.kind, rows: e.rows || null, plays: e.plays || null, role: e.role, feat: e.rows ? LN.hasFeatures(e.rows) : false, bpm: e.rows ? e.rows.filter(t => t.bpm > 0).length > e.rows.length * .5 : false}); });
+  }
+  FILES.forEach(f => { if (f.role === 'extra') f.role = 'library'; });
+  renderFiles();
+  if (errs.length) $('#setupWarn').insertAdjacentHTML('afterbegin', `<div class="warnbox">${errs.map(esc).join('<br>')}</div>`);
+}
+$('#fileIn').addEventListener('change', e => addFiles(e.target.files));
+const drop = $('#drop');
+['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => addFiles(e.dataTransfer.files));
+$('#build').onclick = () => {
+  const inp = {library:[], wrapped:{}, inspo:[], set:[], extra:[], plays:[]};
+  FILES.forEach(f => { if (f.role === 'skip') return; if (f.role === 'plays') { inp.plays.push(...(f.plays || [])); return; } if (f.role.startsWith('wrapped:')) inp.wrapped[f.role.slice(8)] = f.rows; else inp[f.role].push(...f.rows); });
+  CHOSEN = chosen(); IS_DEMO = DEMO_MODE; run(inp);
+};
+
+/* ---------- build + render ---------- */
+function run(inp){
+  M = LN.build(inp); I = LN.insights(M); NOTICES = [];
+  if (CHOSEN.includes('producing') && !(M.inspo.length && LN.hasFeatures(M.inspo))) { CHOSEN = CHOSEN.filter(c => c !== 'producing'); NOTICES.push(M.inspo.length ? 'The Producing report was skipped because your inspiration playlist has no tempo or mood data. Export it with Exportify to unlock it.' : 'The Producing report was skipped because no inspiration playlist was added.'); }
+  if (CHOSEN.includes('dj') && !M.hasBpm) { CHOSEN = CHOSEN.filter(c => c !== 'dj'); NOTICES.push('The DJ report was skipped because your files have no tempo (BPM) data. Exportify CSVs or a rekordbox collection unlock it.'); }
+  if (!CHOSEN.length) CHOSEN = ['listening'];
+  view('report'); renderReport();
+}
+const TABS = {overview:'Overview', listening:'Listening', dj:'DJ', producing:'Producing', method:'How it works'};
+function renderReport(){
+  const L = M.library;
+  $('#rEyebrow').textContent = `${IS_DEMO ? 'Demo listener · ' : ''}${L.length.toLocaleString()} songs${M.dated ? ` · ${M.firstYear}–${M.lastYear}` : ''}`;
+  const h = I.headline; $('#rHead').innerHTML = `${esc(h[0])}<em>${esc(h[1])}</em>${esc(h[2])}`;
+  $('#demoBar').hidden = !IS_DEMO;
+  $('#rLede').textContent = IS_DEMO ? 'Click any chart, stat or name to see the songs behind it.' : 'Click any chart, stat or name to see the songs behind it. Nothing here left your browser.';
+  const ids = ['overview', ...CHOSEN, 'method'];
+  $('#tabs').innerHTML = ids.map((id,i) => `<button role="tab" aria-controls="p-${id}" aria-selected="${i===0}">${TABS[id]}</button>`).join('');
+  $('#panels').innerHTML = ids.map((id,i) => `<section class="panel" id="p-${id}" role="tabpanel" ${i ? 'hidden' : ''}></section>`).join('');
+  CANVASES.length = 0;
+  renderOverview(); if (CHOSEN.includes('listening')) renderListening(); if (CHOSEN.includes('dj')) renderDJ(); if (CHOSEN.includes('producing')) renderProducing(); renderMethod();
+  document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => show(b.getAttribute('aria-controls')));
+  requestAnimationFrame(drawCanvases);
+}
+function show(pid){ document.querySelectorAll('#tabs button').forEach(b => { const on = b.getAttribute('aria-controls') === pid; b.setAttribute('aria-selected', on); $('#'+b.getAttribute('aria-controls')).hidden = !on; }); window.scrollTo({top: Math.min(window.scrollY, $('#tabs').offsetTop)}); requestAnimationFrame(drawCanvases); }
+const goTab = id => { if ($('#p-'+id)) show('p-'+id); };
+
+/* ---------- drawer ---------- */
+let DR = {list:[], shown:150, why:null};
+function openDrawer(title, sub, list, opts = {}){
+  DR = {list, shown:150, why:opts.why || null};
+  $('#dT').textContent = title; $('#dS').innerHTML = (sub || '') + (IS_DEMO ? `${sub ? ' ' : ''}<i>Demo songs and artists are invented.</i>` : '');
+  $('#dq').value = ''; $('#dsort').value = opts.sort || 'rel';
+  $('#drawer').hidden = false; $('#scrim').hidden = false; document.body.style.overflow = 'hidden';
+  renderDrawer(); $('#dX').focus();
+}
+function closeDrawer(){ $('#drawer').hidden = true; $('#scrim').hidden = true; document.body.style.overflow = ''; }
+function renderDrawer(){
+  const q = $('#dq').value.trim().toLowerCase();
+  let L = DR.list.filter(s => !q || (s.name + ' ' + s.artist).toLowerCase().includes(q));
+  const srt = $('#dsort').value;
+  if (srt === 'pop') L = [...L].sort((a,b) => b.pop - a.pop); else if (srt === 'new') L = [...L].sort((a,b) => b.t - a.t); else if (srt === 'old') L = [...L].sort((a,b) => a.t - b.t); else if (srt === 'bpm') L = [...L].sort((a,b) => a.bpm - b.bpm);
+  $('#dN').textContent = L.length + (L.length === 1 ? ' song' : ' songs');
+  const rows = L.slice(0, DR.shown).map(s => { const why = DR.why ? DR.why(s) : '';
+    const play = IS_DEMO || String(s.id).startsWith('demo') ? '' : /^[0-9A-Za-z]{22}$/.test(s.id) ? `<a href="https://open.spotify.com/track/${esc(s.id)}" target="_blank" rel="noopener">Play ↗</a>` : `<a href="https://open.spotify.com/search/${encodeURIComponent(s.name + ' ' + (s.artists[0] || ''))}" target="_blank" rel="noopener">Find ↗</a>`;
+    return `<div class="song"><span class="nm">${esc(s.name)}</span>${play || '<span></span>'}<span class="ar">${esc(s.artist)}</span><span class="meta"><i class="g" style="--c:var(${GVAR[s.g ?? 6]})">${esc(s.lane || M.groups[s.g ?? 6])}</i>${s.bpm ? `<i>${s.bpm} BPM</i>` : ''}${s.camelot && s.camelot !== '?' ? `<i>${s.camelot}</i>` : ''}${s.energy != null ? `<i>E ${f2(s.energy)}</i>` : ''}${s.valence != null ? `<i>V ${f2(s.valence)}</i>` : ''}${s.plays ? `<i>${s.plays} plays</i>` : ''}${s.added ? `<i>added ${fmtDate(s.added)}</i>` : ''}${s.rel ? `<i>released ${s.rel}</i>` : ''}</span>${why ? `<span class="why">${why}</span>` : ''}</div>`; }).join('');
+  $('#dL').innerHTML = (rows || '<p class="muted" style="padding:12px 8px">No songs match that filter.</p>') + (L.length > DR.shown ? `<button class="showmore" id="dMore">Show ${Math.min(150, L.length - DR.shown)} more</button>` : '');
+  const m = $('#dMore'); if (m) m.onclick = () => { DR.shown += 150; renderDrawer(); };
+}
+$('#dX').onclick = closeDrawer; $('#scrim').onclick = closeDrawer;
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#drawer').hidden) closeDrawer(); });
+$('#dq').addEventListener('input', () => { DR.shown = 150; renderDrawer(); });
+$('#dsort').addEventListener('change', renderDrawer);
+function openSong(seed){ const sim = LN.similar(seed, M.library, 40);
+  openDrawer('Songs like "' + seed.name + '"', `${esc(seed.artist)} · ${seed.bpm} BPM · ${esc(seed.camelot)} · energy ${f2(seed.energy)} · valence ${f2(seed.valence)}${seed.added ? ' · liked ' + fmtDate(seed.added) : ''}.<br>Below: the closest songs in your library by tempo, energy, mood and genre.`, [seed, ...sim]); }
+function openMix(seed, pool){ const src = pool || [...new Set([...M.library.filter(t => t.elec), ...M.set])]; const m = LN.mixesInto(seed, src, 60);
+  openDrawer('Mixes well with "' + seed.name + '"', `${seed.bpm} BPM · ${esc(seed.camelot)}. These ${pool ? 'tracks' : 'electronic songs from your library'} sit within about 4% of its tempo in a compatible key (${esc([seed.camelot, ...LN.camNeighbors(seed.camelot)].join(', '))}).`, [seed, ...m], {why: s => s === seed ? 'The starting track.' : `${s.bpm > seed.bpm ? '+' : ''}${s.bpm - seed.bpm} BPM · ${s.camelot === seed.camelot ? 'same key' : 'neighbor key ' + s.camelot}`}); }
+
+/* ---------- chart helpers ---------- */
+function tipFor(box){ const t = document.createElement('div'); t.className = 'tip'; t.hidden = true; box.appendChild(t);
+  return { show(html, ev){ t.innerHTML = html; t.hidden = false; const r = box.getBoundingClientRect(); let x = ev.clientX - r.left + 14, y = ev.clientY - r.top + 14; if (x + 260 > r.width) x = Math.max(4, ev.clientX - r.left - 270); t.style.left = x + 'px'; t.style.top = y + 'px'; }, hide(){ t.hidden = true; } }; }
+const songTip = s => `<b>${esc(s.name)}</b><br>${esc(s.artist)}<br><small>${s.bpm} BPM · ${esc(s.camelot)} · E ${f2(s.energy)} · V ${f2(s.valence)}${s.added ? ' · ' + fmtDate(s.added) : ''}</small>`;
+const legendHTML = gs => gs.map(g => `<span><i style="background:var(${GVAR[g]})"></i>${esc(M.groups[g])}</span>`).join('');
+const CANVASES = [];
+function setupCanvas(box, cv, draw, onClick){ const tip = tipFor(box); const st = {pts:[], w:0, h:0}; const C = {box, cv, draw, st};
+  const pick = (x, y) => { let b = null, bd = 49; for (const p of st.pts) { const d = (p.x-x)**2 + (p.y-y)**2; if (d < bd) { bd = d; b = p.s; } } return b; };
+  cv.addEventListener('mousemove', ev => { const r = cv.getBoundingClientRect(); const s = pick(ev.clientX - r.left, ev.clientY - r.top); if (s) { tip.show(songTip(s), ev); cv.style.cursor = 'pointer'; } else { tip.hide(); cv.style.cursor = 'crosshair'; } });
+  cv.addEventListener('mouseleave', tip.hide);
+  cv.addEventListener('click', ev => { const r = cv.getBoundingClientRect(); const s = pick(ev.clientX - r.left, ev.clientY - r.top); if (s) onClick(s); });
+  CANVASES.push(C); }
+function drawCanvases(){ CANVASES.forEach(C => { if (C.box.offsetParent === null) return; const r = C.box.getBoundingClientRect(); if (!r.width) return; const dpr = window.devicePixelRatio || 1; C.cv.width = Math.round(r.width*dpr); C.cv.height = Math.round(r.height*dpr); const ctx = C.cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); C.st.w = r.width; C.st.h = r.height; C.draw(ctx, C.st); }); }
+window.addEventListener('resize', () => { clearTimeout(window.__rz); window.__rz = setTimeout(drawCanvases, 120); });
+try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawCanvases); } catch(e) {}
+new MutationObserver(drawCanvases).observe(document.documentElement, {attributes:true, attributeFilter:['data-theme']});
+function hbarAxis(svg, x, T, H, ticks, fmt){ ticks.forEach(v => { el('line', {x1:x(v), x2:x(v), y1:T, y2:H, stroke:'var(--grid)'}, svg); const t = el('text', {x:x(v), y:H+14, 'text-anchor':'middle', class:'num'}, svg); t.textContent = fmt ? fmt(v) : v; }); }
+function yAxis(svg, y, L, W, R, ticks, fmt){ ticks.forEach(v => { el('line', {x1:L, x2:W-R, y1:y(v), y2:y(v), stroke:'var(--grid)'}, svg); const t = el('text', {x:L-6, y:y(v)+4, 'text-anchor':'end', class:'num'}, svg); t.textContent = fmt ? fmt(v) : v; }); }
+const niceStep = max => { const raw = max / 4, p = Math.pow(10, Math.floor(Math.log10(raw || 1))); return [1,2,2.5,5,10].map(m => m*p).find(s => s >= raw) || p*10; };
+const block = (html) => `<div class="block">${html}</div>`;
+const hint = (read, says) => `<div class="hint">${read ? `<p><b>How to read it.</b> ${read}</p>` : ''}${says ? `<p><b>What it says.</b> ${says}</p>` : ''}</div>`;
+
+/* ---------- OVERVIEW ---------- */
+function renderOverview(){
+  const L = M.library, P = $('#p-overview'), gs = I.groupShare;
+  const ord = gs.map((v,i) => [v,i]).sort((a,b) => b[0]-a[0]);
+  const cards = [];
+  if (CHOSEN.includes('listening') && !M.tagged.length) cards.push(['listening','Listening', `${[...M.leadCount.entries()].sort((a,b) => b[1]-a[1])[0]?.[0] || 'Your artists'} leads your library`, 'This source has no genre tags, so the report focuses on your artists, eras and what you play most.']);
+  else if (CHOSEN.includes('listening')) cards.push(['listening','Listening', `Led by ${M.groups[ord[0][1]].toLowerCase()}`, `${pct(ord[0][0]*100)} ${M.groups[ord[0][1]].toLowerCase()}, then ${M.groups[ord[1][1]].toLowerCase()} (${pct(ord[1][0]*100)}).${I.shift && I.shift.upTo - I.shift.upFrom > .08 ? ` ${M.groups[I.shift.up]} grew from ${pct(I.shift.upFrom*100)} to ${pct(I.shift.upTo*100)} of your likes.` : ''}`]);
+  if (CHOSEN.includes('dj')) cards.push(['dj','DJ', I.coreLane ? `${I.coreLane.lane} at ${I.coreLane.lo}–${I.coreLane.hi} BPM` : 'Not much dance music yet', I.coreLane ? `${M.pool.length} dance tracks in your pool across ${M.lanes.length} lanes.${M.set.length ? ` Your ${M.set.length} set picks are ready to plan.` : ''}` : 'The DJ report works best with electronic music in your library.']);
+  if (CHOSEN.includes('producing')) cards.push(['producing','Producing', `${I.inspoTone} ${(I.inspoLane || '').toLowerCase()}`, `Around ${I.fI.bpm} BPM, ${pct(I.fI.minor*100)} minor keys, ${fmtDur(I.fI.dur)} long on average.`]);
+  const qn = LN.QUADS[I.topQuad];
+  const topA = [...M.leadCount.entries()].sort((a,b) => b[1]-a[1])[0];
+  const stats = [];
+  if (M.hasFeatures) stats.push(
+    [pct(I.quadShares[I.topQuad]*100), `of your library is "${qn.n.toLowerCase()}": ${qn.d.toLowerCase()}`, 'The mood', () => openDrawer(qn.n, qn.d + '.', L.filter(t => LN.moodOf(t) === I.topQuad), {sort:'pop'})],
+    );
+  stats.push([pct(M.oneOffShare*100), 'of your songs come from artists you saved only once or twice', 'The curator', () => openDrawer('One-song finds', "Songs by artists you've saved only once or twice.", L.filter(t => (M.leadCount.get(t.artists[0]) || 0) <= 2), {sort:'pop'})]);
+  if (!M.hasFeatures && topA) stats.push([topA[1] + ' songs', `by ${topA[0]}, your most-saved artist`, 'The favorite', () => openDrawer(topA[0], 'Every song you saved by them.', L.filter(t => t.artists.includes(topA[0])), {sort:'old'})]);
+  if (I.shift) stats.unshift([`${pct(I.shift.upFrom*100)} → ${pct(I.shift.upTo*100)}`, `${M.groups[I.shift.up].toLowerCase()} share of songs liked, ${M.firstYear} vs ${M.lastYear}`, 'The shift', () => openDrawer(`${M.groups[I.shift.up]} you liked in ${M.lastYear}`, 'Your most recent saves in the genre that grew most.', L.filter(t => t.y === M.lastYear && t.g === I.shift.up), {sort:'new'})]);
+  if (M.hasBpm) stats.push([LN.feats(L).bpm + ' BPM', 'median tempo of everything you save', 'The pulse', () => openDrawer('Your tempo sweet spot', 'Songs within 3 BPM of your median tempo.', L.filter(t => Math.abs(t.bpm - LN.feats(L).bpm) <= 3), {sort:'pop'})]);
+  if (M.hasPlays && M.playTotal) stats.push([M.playHours ? Math.round(M.playHours).toLocaleString() + ' h' : M.playTotal.toLocaleString(), M.playHours ? 'of listening in your history' : 'plays counted in your files', 'The habit', () => goTab('listening')]);
+  P.innerHTML = `${NOTICES.map(n => `<div class="notice">${esc(n)}</div>`).join('')}
+    <div class="fp"><div class="chart" style="padding:10px"><div class="cbox" id="fp"><canvas id="fpc" aria-label="Sonic fingerprint: every song placed by when you liked it and its tempo"></canvas></div></div>
+      <div class="block"><div class="eyebrow">Your sonic fingerprint</div><h2>${M.dated ? `${M.lastYear - M.firstYear + 1} years, one shape.` : 'Your library, one shape.'}</h2><div class="legend">${legendHTML([0,1,2,3,4,5,6].filter(g => M.library.some(t => t.g === g)))}</div>
+      ${hint(`Each dot is one song. ${M.dated ? `The center is ${M.firstYear} and the edge is ${M.lastYear}, so each ring is a year.` : 'Distance from the center is energy.'} ${M.hasBpm ? 'The angle is tempo, running clockwise from 60 BPM at the top.' : 'Each slice of the circle is a genre group.'}`, 'Clusters show where your taste lives. Hover a dot to see the song, and click it to open songs like it.')}</div></div>
+    ${block(`<h3>Your sound in ${cards.length === 1 ? 'one line' : cards.length === 2 ? 'two lines' : 'three lines'}</h3><div class="three">${cards.map(c => `<button class="card" data-go="${c[0]}"><span class="k">${c[1]}</span><span class="h">${esc(c[2])}</span><p>${esc(c[3])}</p><span class="go">Explore ${c[1] === 'DJ' ? 'DJ' : c[1].toLowerCase()} →</span></button>`).join('')}</div>`)}
+    ${block(`<h3>What defines you</h3><div class="stats" id="ovStats">${stats.map((s,i) => `<button class="stat" data-i="${i}"><em>${s[2]}</em><b>${s[0]}</b><span>${esc(s[1])}</span></button>`).join('')}</div>`)}
+    ${block(`<h3>Your share card</h3><p class="muted" style="margin:0">Save it as an image for stories and posts, or copy the summary as text.</p><div class="share" id="shareCard"></div><div class="shareBtns"><button class="cta alt" id="saveCard">Save as image</button><button class="ghost" id="copySum">Copy summary</button> <span class="a" id="copyMsg"></span></div>`)}`;
+  P.querySelectorAll('[data-go]').forEach(b => b.onclick = () => goTab(b.dataset.go));
+  P.querySelectorAll('#ovStats .stat').forEach(b => b.onclick = () => stats[+b.dataset.i][3]());
+  const topArtist = [...M.leadCount.entries()].sort((a,b) => b[1]-a[1])[0];
+  const sc = [M.hasFeatures ? [pct(I.quadShares[I.topQuad]*100), qn.n.toLowerCase()] : [L.length.toLocaleString(), 'songs'], [M.hasBpm ? LN.feats(L).bpm + '' : '–', 'median BPM'], [pct(M.oneOffShare*100), 'one-song finds']];
+  $('#shareCard').innerHTML = `<span class="e">Deep Cuts · ${L.length.toLocaleString()} songs</span><span class="h">${esc(I.headline.join(''))}</span><div class="row">${sc.map(s => `<div><b>${s[0]}</b><span>${esc(s[1])}</span></div>`).join('')}</div><span style="font-size:14px;opacity:.85">${I.coreLane ? `DJ lane: ${esc(I.coreLane.lane)} ${I.coreLane.lo}–${I.coreLane.hi} BPM · ` : ''}Most saved: ${esc(topArtist ? topArtist[0] : '')}</span><span class="f"><span>${M.dated ? M.firstYear + '–' + M.lastYear : ''}</span><span>deep cuts</span></span>`;
+  $('#copySum').onclick = () => { const txt = `${I.headline.join('')} ${sc.map(s => s[0] + ' ' + s[1]).join(' · ')}.${I.coreLane ? ` DJ lane: ${I.coreLane.lane} ${I.coreLane.lo}–${I.coreLane.hi} BPM.` : ''} Made with Deep Cuts.`;
+    const done = m => $('#copyMsg').textContent = m;
+    try { navigator.clipboard.writeText(txt).then(() => done('Copied.'), () => done(txt)); } catch(e) { done(txt); } };
+  // fingerprint
+  const T0 = M.dated ? Date.parse(M.firstYear + '-01-01') : 0, T1 = M.dated ? Date.parse((M.lastYear + 1) + '-01-01') : 1;
+  const ang = b => -Math.PI/2 + ((Math.min(180, Math.max(60, b)) - 60) / 120) * Math.PI * 2;
+  setupCanvas($('#fp'), $('#fpc'), (ctx, st) => {
+    const W = st.w, H = st.h, cx = W/2, cy = H/2, R = Math.min(W,H)/2 - 26, r0 = R*.08; st.pts = []; ctx.clearRect(0,0,W,H);
+    ctx.strokeStyle = css('--grid'); ctx.fillStyle = css('--faint'); ctx.font = '10px ' + css('--mono'); ctx.lineWidth = 1;
+    if (M.dated) for (let y = M.firstYear + 1; y <= M.lastYear; y++) { const rr = r0 + (R - r0) * (Date.parse(y + '-01-01') - T0) / (T1 - T0); ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI*2); ctx.stroke(); if ((y - M.firstYear) % 2 === 0 || y === M.lastYear) { ctx.textAlign = 'left'; ctx.fillText(String(y), cx + 3, cy - rr + 11); } }
+    ctx.textAlign = 'center';
+    if (M.hasBpm) [60,80,100,120,140,160].forEach(b => { const a = ang(b); ctx.beginPath(); ctx.moveTo(cx + Math.cos(a)*r0, cy + Math.sin(a)*r0); ctx.lineTo(cx + Math.cos(a)*R, cy + Math.sin(a)*R); ctx.stroke(); ctx.fillText(b + '', cx + Math.cos(a)*(R+14), cy + Math.sin(a)*(R+14) + 3); });
+    const cols = GVAR.map(css);
+    L.filter(t => (t.bpm > 0 || !M.hasBpm) && (!M.dated || t.t)).sort((a,b) => (a.g === 0) - (b.g === 0)).forEach((s, i) => {
+      const rr = M.dated ? r0 + (R - r0) * (s.t - T0) / (T1 - T0) + ((s.energy ?? .5) - .5) * 4 : r0 + (R - r0) * (s.energy ?? .5);
+      const jit = ((i * 9301 + 49297) % 233280) / 233280 - .5; const a = M.hasBpm ? ang(s.bpm) + jit * .02 : -Math.PI/2 + (s.g + .5 + jit * .9) / 7 * Math.PI * 2; const x = cx + Math.cos(a)*rr, y = cy + Math.sin(a)*rr;
+      ctx.globalAlpha = s.g === 6 ? .35 : .8; ctx.fillStyle = cols[s.g]; ctx.beginPath(); ctx.arc(x, y, s.g === 0 ? 2.1 : 1.8, 0, Math.PI*2); ctx.fill(); st.pts.push({x, y, s}); });
+    ctx.globalAlpha = 1;
+  }, openSong);
+  $('#saveCard').onclick = async () => {
+    const btn = $('#saveCard'), done = m => $('#copyMsg').textContent = m; btn.disabled = true;
+    try {
+      const blob = await shareImage({L, T0, T1, ang, sc, topArtist});
+      const dl = window.claude?.use ? await window.claude.use('downloads').catch(() => null) : null;
+      if (dl) { try { await dl.save({filename:'deep-cuts.png', data:blob}); done('Saved.'); } catch(e) { if (e && e.code !== 'declined') done('Couldn\'t save the image here. Try a screenshot instead.'); } }
+      else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'deep-cuts.png'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); done('Saved.'); }
+    } catch(e) { done('Couldn\'t make the image. Try a screenshot instead.'); }
+    btn.disabled = false; };
+}
+
+/* ---------- SHARE IMAGE (1080x1350, always dark) ---------- */
+async function shareImage({L, T0, T1, ang, sc, topArtist}){
+  const W = 1080, H = 1350, X = 84, C = {bg:'#13121b', fg:'#f0eef7', mut:'#aaa5bd', faint:'#6f6a85', grid:'#2a2638', acc:'#a896ff'};
+  const dots = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#8f8aa3','#4a4560'];
+  const D = '"Unbounded","Arial Black",sans-serif', B = '"Instrument Sans",system-ui,sans-serif', MO = '"JetBrains Mono",ui-monospace,monospace';
+  try { await Promise.all(['700 60px Unbounded','500 24px "JetBrains Mono"','500 26px "Instrument Sans"'].map(f => document.fonts.load(f))); } catch(e) {}
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const ctx = cv.getContext('2d');
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  const g = ctx.createRadialGradient(W*.85, 120, 0, W*.85, 120, 700); g.addColorStop(0, 'rgba(168,150,255,.16)'); g.addColorStop(1, 'rgba(168,150,255,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.textBaseline = 'alphabetic';
+  // eyebrow
+  ctx.font = '500 24px ' + MO; ctx.fillStyle = C.mut; try { ctx.letterSpacing = '3px'; } catch(e) {} ctx.fillText(`DEEP CUTS · ${L.length.toLocaleString()} SONGS`, X, 118); try { ctx.letterSpacing = '0px'; } catch(e) {}
+  // headline, word-wrapped, accent on the middle part
+  const words = []; I.headline.forEach((s, i) => { const glue0 = i > 0 && !/\s$/.test(I.headline[i-1]) && !/^\s/.test(s); s.split(/\s+/).filter(Boolean).forEach((w, j) => words.push([w, i === 1, j === 0 && glue0 && words.length > 0])); });
+  let size = 64, lines;
+  const wrap = () => { ctx.font = `700 ${size}px ${D}`; const out = [[]]; let w = 0; const sp = ctx.measureText(' ').width;
+    words.forEach(wd => { const ww = ctx.measureText(wd[0]).width, gap = wd[2] ? 0 : sp; if (w && !wd[2] && w + gap + ww > W - 2*X) { out.push([]); w = 0; } out[out.length-1].push(wd); w += (w ? gap : 0) + ww; }); return out; };
+  do { lines = wrap(); if (lines.length > 3) size -= 4; } while (lines.length > 3 && size > 40);
+  let y = 118 + 36 + size; const lh = size * 1.14;
+  lines.forEach(ln => { let x = X; ln.forEach(([w, em, glue], k) => { if (k && !glue) x += ctx.measureText(' ').width; ctx.fillStyle = em ? C.acc : C.fg; ctx.fillText(w, x, y); x += ctx.measureText(w).width; }); y += lh; });
+  // fingerprint
+  const top = y - lh + 30, bottom = 1066, R = Math.min(350, (bottom - top) / 2), cx = W/2, cy = top + (bottom - top) / 2, r0 = R * .08;
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1.5;
+  if (M.dated) for (let yr = M.firstYear + 1; yr <= M.lastYear; yr++) { const rr = r0 + (R - r0) * (Date.parse(yr + '-01-01') - T0) / (T1 - T0); ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI*2); ctx.stroke(); }
+  else [.25,.5,.75,1].forEach(f => { ctx.beginPath(); ctx.arc(cx, cy, r0 + (R - r0) * f, 0, Math.PI*2); ctx.stroke(); });
+  L.filter(t => (t.bpm > 0 || !M.hasBpm) && (!M.dated || t.t)).sort((a,b) => (a.g === 0) - (b.g === 0)).forEach((s, i) => {
+    const rr = M.dated ? r0 + (R - r0) * (s.t - T0) / (T1 - T0) + ((s.energy ?? .5) - .5) * 8 : r0 + (R - r0) * (s.energy ?? .5);
+    const jit = ((i * 9301 + 49297) % 233280) / 233280 - .5; const a = M.hasBpm ? ang(s.bpm) + jit * .02 : -Math.PI/2 + (s.g + .5 + jit * .9) / 7 * Math.PI * 2;
+    ctx.globalAlpha = s.g === 6 ? .45 : .85; ctx.fillStyle = dots[s.g ?? 6]; ctx.beginPath(); ctx.arc(cx + Math.cos(a)*rr, cy + Math.sin(a)*rr, s.g === 0 ? 3.6 : 3.1, 0, Math.PI*2); ctx.fill(); });
+  ctx.globalAlpha = 1;
+  // legend under the circle: top groups
+  const gs = [0,1,2,3,4,5].filter(k => L.some(t => t.g === k)).slice(0, 5); ctx.font = '500 20px ' + B;
+  const items = gs.map(k => [dots[k], M.groups[k]]), iw = items.map(it => ctx.measureText(it[1]).width + 38); let lx = (W - iw.reduce((a,b) => a+b, 0)) / 2;
+  items.forEach((it, i) => { ctx.fillStyle = it[0]; ctx.beginPath(); ctx.arc(lx + 7, 1092, 7, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = C.mut; ctx.fillText(it[1], lx + 20, 1099); lx += iw[i]; });
+  // stats
+  ctx.strokeStyle = C.grid; ctx.beginPath(); ctx.moveTo(X, 1130); ctx.lineTo(W - X, 1130); ctx.stroke();
+  const cw = (W - 2*X) / 3; sc.forEach((s, i) => { ctx.fillStyle = C.fg; ctx.font = `700 46px ${D}`; ctx.fillText(s[0], X + cw*i, 1196); ctx.fillStyle = C.mut; ctx.font = `500 22px ${B}`; ctx.fillText(s[1], X + cw*i, 1230); });
+  // footer
+  ctx.font = '500 22px ' + B; ctx.fillStyle = C.mut;
+  let foot = `${I.coreLane ? `DJ lane: ${I.coreLane.lane} ${I.coreLane.lo}–${I.coreLane.hi} BPM · ` : ''}Most saved: ${topArtist ? topArtist[0] : ''}`;
+  while (ctx.measureText(foot).width > W - 2*X - 200 && foot.length > 10) foot = foot.slice(0, -2).trimEnd() + '…';
+  ctx.fillText(foot, X, 1290);
+  ctx.font = '700 22px ' + D; ctx.fillStyle = C.acc; ctx.textAlign = 'right'; ctx.fillText('Deep Cuts', W - X, 1290); ctx.textAlign = 'left';
+  return await new Promise((res, rej) => cv.toBlob(b => b ? res(b) : rej(new Error('blob')), 'image/png'));
+}
+
+/* ---------- LISTENING ---------- */
+function renderListening(){
+  const L = M.library, P = $('#p-listening'), gs = I.groupShare;
+  const ord = gs.map((v,i) => [v,i]).filter(x => x[0] > 0).sort((a,b) => b[0]-a[0]);
+  const thesis = !ord.length ? `Your files don't include genre tags, so this report focuses on your artists, eras${M.hasPlays ? ' and what you actually play' : ''}. Add Exportify CSVs to see genres and moods.` : `Your library leans <b>${esc(M.groups[ord[0][1]].toLowerCase())}</b> (${pct(ord[0][0]*100)} of tagged songs)${ord[1] ? `, with ${esc(M.groups[ord[1][1]].toLowerCase())} next at ${pct(ord[1][0]*100)}` : ''}.${I.shift && I.shift.upTo - I.shift.upFrom > .08 ? ` Over time, ${esc(M.groups[I.shift.up].toLowerCase())} grew from ${pct(I.shift.upFrom*100)} of what you liked in ${M.firstYear} to <b>${pct(I.shift.upTo*100)}</b> in ${M.lastYear}.` : ''} ${M.hasFeatures ? ` Overall your saves lean ${LN.QUADS[I.topQuad].d.toLowerCase()}.` : ''}`;
+  const hasW = Object.keys(M.wrapped).length > 0;
+  P.innerHTML = `${block(`<h2>Listening taste</h2><p class="thesis">${thesis}</p>`)}
+    ${M.hasPlays ? block(`<h3>What you actually play</h3><div class="stats" id="playStats"></div>${hint('Your most-played songs by play count. Click a bar to see that artist\'s songs.', playSays())}<div class="chart"><div class="abars" id="pbars"></div></div>`) : ''}
+    ${M.dated ? block(`<h3>Every month you've been saving songs</h3>${hint('One bar per month, split by genre. Click a month to see what you saved, or click an era below.', '')}<div class="chart" id="months"></div><div class="eras" id="eras"></div>`) : ''}
+    ${M.hasFeatures ? block(`<h3>The mood map</h3>${hint('Each dot is a song. Left to right runs from sad to happy (Spotify\'s "valence"), bottom to top from calm to intense ("energy"). Click a genre to hide it, or a corner name to list its songs.', moodSays())}<div class="chart"><div class="legend" id="moodLeg"></div><div class="cbox" id="mood" style="aspect-ratio:16/10"><canvas id="moodc" aria-label="Mood map"></canvas></div></div>`) : ''}
+    ${M.dated && M.tagged.length ? block(`<h3>Genre mix by year</h3>${hint('Each row is the songs you liked that year, split by genre. Click any segment to see those songs.', '')}<div class="chart" id="stack"></div><details class="t"><summary>Show as table</summary><div class="tbl" id="stackTbl"></div></details>`) : ''}
+    ${hasW ? block(`<h3>Wrapped memory lane</h3>${hint('Your Spotify Wrapped top songs, year by year. Pick a year to see its top 10 and how it sounded.', '')}<div class="pills" id="wrP"></div><div class="chart wr" id="wr"></div>`) : ''}
+    ${block(`<h3>${M.oneOffShare > .4 ? 'You follow songs, not artists' : 'The artists you return to'}</h3><div class="stats">${[[M.leadCount.size.toLocaleString(), 'different lead artists'], [pct(M.oneOffShare*100), 'of songs come from artists you saved once or twice'], [pct(M.top10Share*100), 'of songs come from your top 10 artists']].map(([b,s]) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`).join('')}</div>${hint('Click an artist to see every song you saved by them.', M.oneOffShare > .4 ? 'Your library is spread wide: a few artists get deep loyalty, and everything else is one great song at a time.' : 'A core group of artists makes up a big part of your library.')}<div class="chart"><div class="abars" id="abars"></div></div>`)}
+    ${L.some(t => t.rel) ? block(`<h3>How far back your taste reaches</h3>${hint('Songs you liked, grouped by the year the song came out. Click a bar to open that era.', relSays())}<div class="chart" id="rel"></div>`) : ''}`;
+  if (M.dated) { drawMonths(); drawEras(); if (M.tagged.length) drawStack(); }
+  if (M.hasFeatures) drawMood();
+  if (hasW) drawWrapped();
+  drawArtists(); if (L.some(t => t.rel)) drawRel(); if (M.hasPlays) drawPlays();
+}
+function playSays(){ const top = [...M.library, ...(M.playedNotSaved || [])].filter(t => t.plays).sort((a,b) => b.plays - a.plays); if (!top.length) return '';
+  const t10 = top.slice(0, 10).reduce((a,t) => a + t.plays, 0), all = top.reduce((a,t) => a + t.plays, 0);
+  return `Your top 10 songs take ${pct(t10 / all * 100)} of your plays.${M.savedPlayShare != null && M.library.length ? ` ${pct(M.savedPlayShare * 100)} of your plays go to songs in your library.` : ''}`; }
+function drawPlays(){
+  const top = [...M.library, ...(M.playedNotSaved || [])].filter(t => t.plays).sort((a,b) => b.plays - a.plays), max = top[0] ? top[0].plays : 1;
+  const st = [[M.playTotal.toLocaleString(), 'plays in your files']];
+  if (M.playHours) st.push([Math.round(M.playHours).toLocaleString() + ' h', `listened${M.historyFrom ? ' since ' + fmtDate(M.historyFrom.slice(0,10)) : ''}`]);
+  if (M.playedNotSaved && M.playedNotSaved.length) st.push([M.playedNotSaved.length.toLocaleString(), 'songs you played 3+ times but never saved', true]);
+  $('#playStats').innerHTML = st.map((x,i) => x[2] ? `<button class="stat" id="pns"><b>${x[0]}</b><span>${x[1]}</span></button>` : `<div class="stat"><b>${x[0]}</b><span>${x[1]}</span></div>`).join('');
+  const b = $('#pns'); if (b) b.onclick = () => openDrawer('Played but never saved', 'Songs from your listening history with 3 or more plays that aren\'t in your library. Worth a save?', M.playedNotSaved, {why: s => s.plays + ' plays'});
+  $('#pbars').innerHTML = top.slice(0, 15).map((t,i) => `<button class="abar ${i < 3 ? 'top' : ''}" data-i="${i}"><span class="nm">${esc(t.name)} <span class="a">· ${esc(t.artists[0] || '')}</span></span><span><span class="t" style="width:${t.plays/max*100}%"></span></span><span class="n">${t.plays}</span></button>`).join('');
+  $('#pbars').querySelectorAll('.abar').forEach(bn => bn.onclick = () => { const t = top[+bn.dataset.i], a = t.artists[0]; openDrawer(a, `Songs by ${esc(a)}, most played first.`, top.filter(s => s.artists.includes(a)), {why: s => s.plays + ' plays'}); });
+}
+function moodSays(){ const L = M.library; const r = M.dated ? L.filter(t => t.y >= M.lastYear - 1) : []; const q = LN.QUADS[I.topQuad];
+  return `Your biggest corner is <b>${q.n.toLowerCase()}</b> at ${pct(I.quadShares[I.topQuad]*100)} of your library${r.length > 30 ? `, and ${pct(r.filter(t => LN.moodOf(t) === I.topQuad).length / r.length * 100)} of what you've liked since ${M.lastYear - 1}` : ''}.`; }
+function relSays(){ const L = M.library.filter(t => t.rel); const old = L.filter(t => t.rel < 2010).length; const recent = L.filter(t => t.rel >= (M.lastYear || 2026) - 3).length;
+  return `${pct(recent / L.length * 100)} of your saves came out in the last few years, and ${old} songs (${pct(old / L.length * 100)}) are from before 2010.`; }
+function drawMonths(){
+  const L = M.library, box = $('#months'), tip = tipFor(box);
+  const ms = []; for (let y = M.firstYear; y <= M.lastYear; y++) for (let m = 1; m <= 12; m++) ms.push(y + '-' + String(m).padStart(2,'0'));
+  const first = L.filter(t => t.added).map(t => t.added.slice(0,7)).sort()[0], last = L.filter(t => t.added).map(t => t.added.slice(0,7)).sort().pop();
+  const months = ms.filter(k => k >= first && k <= last);
+  const by = new Map(months.map(k => [k, []])); L.forEach(t => { const k = t.added.slice(0,7); if (by.has(k)) by.get(k).push(t); });
+  const max = Math.max(1, ...[...by.values()].map(v => v.length));
+  const G = [0,1,2,3,4,5,6].filter(g => L.some(t => t.g === g));
+  box.innerHTML = `<div class="legend">${legendHTML(G)}</div>`;
+  const W = 900, H = 220, Lp = 34, R = 6, T = 10, B = 24, bw = (W-Lp-R) / months.length;
+  const svg = el('svg', {viewBox:`0 0 ${W} ${H}`, role:'img', 'aria-label':'Songs liked per month'}, box);
+  const y = v => T + (H-T-B) * (1 - v/max); const step = niceStep(max); const ticks = []; for (let v = 0; v <= max; v += step) ticks.push(v);
+  yAxis(svg, y, Lp, W, R, ticks);
+  months.forEach((k, i) => { const list = by.get(k); const x = Lp + i*bw + (bw > 4 ? 1 : 0), w = Math.max(1, bw - (bw > 4 ? 2 : .5)); let acc = 0;
+    G.slice().reverse().forEach(g => { const n = list.filter(t => t.g === g).length; if (!n) return; el('rect', {x, y:y(acc+n), width:w, height:Math.max(0, y(acc)-y(acc+n)), fill:`var(${GVAR[g]})`}, svg); acc += n; });
+    if (k.endsWith('-01')) { const t = el('text', {x:x + w/2, y:H-6, 'text-anchor':'middle', class:'num'}, svg); t.textContent = k.slice(0,4); }
+    const hit = el('rect', {x:Lp + i*bw, y:T, width:bw, height:H-T-B, fill:'transparent', class:'click'}, svg);
+    hit.addEventListener('mousemove', ev => tip.show(`<b>${fmtDate(k + '-01')}</b><br>${list.length} songs`, ev)); hit.addEventListener('mouseleave', tip.hide);
+    hit.addEventListener('click', () => openDrawer('Songs you liked in ' + fmtDate(k + '-01'), `${list.length} songs.`, list, {sort:'old'})); });
+}
+function drawEras(){
+  if (!I.eras || !I.eras.length) return;
+  $('#eras').innerHTML = I.eras.map((e,i) => `<button class="era" data-i="${i}"><b>${e.label}</b><span>${esc(e.lane && M.groups[e.dom] === 'Electronic' ? e.lane : M.groups[e.dom])} era. ${e.artists.length ? esc(e.artists.join(', ')) + ' lead your saves.' : ''} <span class="a">See songs →</span></span></button>`).join('');
+  $('#eras').querySelectorAll('.era').forEach(b => b.onclick = () => { const e = I.eras[+b.dataset.i]; openDrawer(`Your ${e.label} era`, `${esc(e.lane || M.groups[e.dom])}. Songs you liked from ${e.from} to ${e.to}.`, M.library.filter(t => t.y >= e.from && t.y <= e.to), {sort:'pop'}); });
+}
+function drawMood(){
+  const on = new Set([0,1,2,3,4,5,6]), leg = $('#moodLeg'), box = $('#mood');
+  const G = [0,1,2,3,4,5,6].filter(g => M.library.some(t => t.g === g));
+  leg.innerHTML = G.map(g => `<button aria-pressed="true" data-g="${g}"><i style="background:var(${GVAR[g]})"></i>${esc(M.groups[g])}</button>`).join('');
+  leg.querySelectorAll('button').forEach(b => b.onclick = () => { const g = +b.dataset.g; on.has(g) ? on.delete(g) : on.add(g); b.setAttribute('aria-pressed', on.has(g)); drawCanvases(); });
+  const POS = [[0,0],[1,0],[0,1],[1,1]];
+  LN.QUADS.forEach((q, qi) => { const b = document.createElement('button'); const [px, py] = POS[qi];
+    b.style.cssText = `position:absolute;${px ? 'right' : 'left'}:44px;${py ? 'bottom' : 'top'}:${py ? 34 : 8}px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 11px;font:600 12px var(--body);cursor:pointer;z-index:2;color:var(--fg)`;
+    b.innerHTML = `${q.n} <span style="font-family:var(--mono);font-weight:400;color:var(--muted)">${pct(I.quadShares[qi]*100)}</span>`;
+    b.onclick = () => { const list = M.library.filter(t => LN.moodOf(t) === qi && on.has(t.g)); openDrawer(q.n, q.d + '. ' + list.length + ' songs from the genres shown on the map.', list, {sort:'pop'}); }; box.appendChild(b); });
+  setupCanvas(box, $('#moodc'), (ctx, st) => {
+    const W = st.w, H = st.h, Lp = 36, R = 10, T = 10, B = 28; st.pts = []; const x = v => Lp + (W-Lp-R)*v, y = v => T + (H-T-B)*(1-v);
+    ctx.clearRect(0,0,W,H); ctx.strokeStyle = css('--grid'); ctx.fillStyle = css('--faint'); ctx.font = '10px ' + css('--mono'); ctx.lineWidth = 1;
+    [0,.2,.4,.6,.8,1].forEach(v => { ctx.beginPath(); ctx.moveTo(x(v), T); ctx.lineTo(x(v), H-B); ctx.stroke(); ctx.textAlign = 'center'; ctx.fillText(v.toFixed(1), x(v), H-B+14); ctx.beginPath(); ctx.moveTo(Lp, y(v)); ctx.lineTo(W-R, y(v)); ctx.stroke(); ctx.textAlign = 'right'; ctx.fillText(v.toFixed(1), Lp-6, y(v)+3); });
+    ctx.strokeStyle = css('--faint'); ctx.setLineDash([4,4]); ctx.beginPath(); ctx.moveTo(x(.4), T); ctx.lineTo(x(.4), H-B); ctx.moveTo(Lp, y(.6)); ctx.lineTo(W-R, y(.6)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = css('--muted'); ctx.font = '11px ' + css('--body'); ctx.textAlign = 'left'; ctx.fillText('sad', Lp, H-2); ctx.textAlign = 'right'; ctx.fillText('happy → valence', W-R, H-2);
+    const cols = GVAR.map(css);
+    M.library.filter(t => on.has(t.g) && t.valence != null).sort((a,b) => (a.g === 0) - (b.g === 0)).forEach(s => { const px = x(s.valence), py = y(s.energy ?? 0); ctx.globalAlpha = s.g === 6 ? .3 : .7; ctx.fillStyle = cols[s.g]; ctx.beginPath(); ctx.arc(px, py, 2.2, 0, Math.PI*2); ctx.fill(); st.pts.push({x:px, y:py, s}); });
+    ctx.globalAlpha = 1;
+  }, openSong);
+}
+function drawStack(){
+  const L = M.library, box = $('#stack'), tip = tipFor(box), G = [0,1,2,3,4,5].filter(g => L.some(t => t.g === g));
+  const years = [...new Set(L.map(t => t.y))].filter(Boolean).sort();
+  box.innerHTML = `<div class="legend">${legendHTML(G)}</div>`;
+  const W = 900, rowH = 28, gap = 8, Lp = 48, R = 8, T = 4, H = T + years.length*(rowH+gap) + 22;
+  const svg = el('svg', {viewBox:`0 0 ${W} ${H}`, role:'img', 'aria-label':'Genre share by year liked'}, box);
+  const x = v => Lp + (W-Lp-R)*v/100;
+  [0,25,50,75,100].forEach(v => { el('line', {x1:x(v), x2:x(v), y1:T, y2:H-20, stroke:'var(--grid)'}, svg); const t = el('text', {x:x(v), y:H-4, 'text-anchor': v===0?'start':v===100?'end':'middle', class:'num'}, svg); t.textContent = v + '%'; });
+  const rows = [];
+  years.forEach((yr, ri) => { const ys = L.filter(s => s.y === yr && s.g !== 6), yy = T + ri*(rowH+gap); const lt = el('text', {x:0, y:yy+rowH/2+4, class:'num lab'}, svg); lt.textContent = yr;
+    let acc = 0; const rec = {yr};
+    G.forEach(g => { const list = ys.filter(s => s.g === g), v = ys.length ? list.length / ys.length * 100 : 0; rec[g] = v; if (!v) return;
+      const x0 = x(acc), w = Math.max(0, x(acc+v) - x0 - 2); acc += v;
+      const r = el('rect', {x:x0, y:yy, width:w, height:rowH, rx:3, fill:`var(${GVAR[g]})`, class:'click'}, svg);
+      if (g === G[0] && w > 36) { const t = el('text', {x:x0+8, y:yy+rowH/2+4, class:'num', style:'fill:#fff;font-weight:600;pointer-events:none'}, svg); t.textContent = pct(v); }
+      r.addEventListener('mousemove', ev => tip.show(`<b>${yr} · ${esc(M.groups[g])}</b><br>${pct(v)} · ${list.length} songs`, ev)); r.addEventListener('mouseleave', tip.hide);
+      r.addEventListener('click', () => openDrawer(`${M.groups[g]} you liked in ${yr}`, `${list.length} songs, ${pct(v)} of that year's tagged likes.`, list, {sort:'pop'})); });
+    rows.push(rec); });
+  $('#stackTbl').innerHTML = '<table><thead><tr><th>Year</th>' + G.map(g => `<th>${esc(M.groups[g])}</th>`).join('') + '</tr></thead><tbody>' + rows.map(r => '<tr><td class="m">' + r.yr + '</td>' + G.map(g => `<td class="m">${pct(r[g]||0)}</td>`).join('') + '</tr>').join('') + '</tbody></table>';
+}
+function drawWrapped(){
+  const keys = Object.keys(M.wrapped).filter(k => k !== 'All-time').sort(); if (M.wrapped['All-time']) keys.push('All-time');
+  const P = $('#wrP'); P.innerHTML = keys.map(k => `<button aria-pressed="false" data-k="${k}">${k}</button>`).join('');
+  function render(k){ P.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === k));
+    const list = M.wrapped[k], f = LN.feats(list), c = new Array(6).fill(0); list.forEach(t => { if (t.g < 6) c[t.g]++; }); const tot = c.reduce((a,b) => a+b, 0) || 1;
+    const ac = new Map(); list.forEach(t => t.artists[0] && ac.set(t.artists[0], (ac.get(t.artists[0]) || 0) + 1)); const who = [...ac.entries()].sort((a,b) => b[1]-a[1]).slice(0,3).map(x => x[0]).join(', ');
+    const tone = f.valence < .38 ? 'dark' : f.valence < .46 ? 'bittersweet' : 'bright';
+    $('#wr').innerHTML = `<div class="block" style="align-content:start"><span class="eyebrow">${k === 'All-time' ? 'All-time top songs' : 'Wrapped ' + k}</span><p class="bigline">${esc(who)}</p>${M.hasFeatures ? `<p class="muted" style="margin:0">median ${f.bpm} BPM · a ${tone} year (valence ${f2(f.valence)})</p>` : ''}<div class="minibar">${c.map((v,g) => v ? `<i title="${esc(M.groups[g])}" style="flex:${v};background:var(${GVAR[g]})"></i>` : '').join('')}</div><div class="legend" style="margin:0">${legendHTML(c.map((v,g) => v ? g : -1).filter(g => g >= 0))}</div><button class="cta" id="wrAll">See all ${list.length} songs</button></div>
+      <ol>${list.slice(0,10).map((t,i) => `<li data-i="${i}"><span class="r">${i+1}</span><span><b style="font-weight:600">${esc(t.name)}</b><br><span class="a">${esc(t.artist)}</span></span><span class="m">${t.bpm ? t.bpm + ' BPM' : ''}</span></li>`).join('')}</ol>`;
+    $('#wrAll').onclick = () => openDrawer(k === 'All-time' ? 'All-time top songs' : 'Wrapped ' + k, 'In ranking order.', list, {why: s => '#' + (list.indexOf(s) + 1)});
+    $('#wr').querySelectorAll('li').forEach(li => li.onclick = () => openSong(list[+li.dataset.i])); }
+  P.querySelectorAll('button').forEach(b => b.onclick = () => render(b.dataset.k));
+  render(keys.filter(k => k !== 'All-time').pop() || keys[0]);
+}
+function drawArtists(){
+  const pairs = [...M.anyCount.entries()].filter(([a]) => a).sort((a,b) => b[1]-a[1]).slice(0, 15), max = pairs[0] ? pairs[0][1] : 1;
+  $('#abars').innerHTML = pairs.map(([a,n],i) => `<button class="abar ${i < 2 ? 'top' : ''}" data-a="${esc(a)}"><span class="nm">${esc(a)}</span><span><span class="t" style="width:${n/max*100}%"></span></span><span class="n">${n}</span></button>`).join('');
+  $('#abars').querySelectorAll('.abar').forEach(b => b.onclick = () => { const a = b.dataset.a; const list = M.library.filter(s => s.artists.includes(a)); openDrawer(a, `${list.length} songs you liked that feature ${esc(a)}.`, list, {sort:'old'}); });
+}
+function drawRel(){
+  const box = $('#rel'), tip = tipFor(box), L = M.library;
+  const bins = [['Before 1990', s => s.rel && s.rel < 1990], ['1990s', s => s.rel >= 1990 && s.rel < 2000], ['2000s', s => s.rel >= 2000 && s.rel < 2010], ['2010–14', s => s.rel >= 2010 && s.rel < 2015], ['2015–19', s => s.rel >= 2015 && s.rel < 2020], ['2020–22', s => s.rel >= 2020 && s.rel < 2023], ['2023+', s => s.rel >= 2023]];
+  const data = bins.map(([n,f]) => [n, L.filter(f)]).filter(d => d[1].length); const max = Math.max(1, ...data.map(d => d[1].length));
+  const W = 900, H = 210, Lp = 44, R = 6, T = 14, B = 28, bw = (W-Lp-R)/data.length;
+  const svg = el('svg', {viewBox:`0 0 ${W} ${H}`, role:'img', 'aria-label':'Liked songs by release era'}, box);
+  const y = v => T + (H-T-B)*(1 - v/max); const st = niceStep(max); const ticks = []; for (let v = 0; v <= max; v += st) ticks.push(v); yAxis(svg, y, Lp, W, R, ticks);
+  data.forEach(([n, list], i) => { const x = Lp + i*bw + bw*.18, w = bw*.64;
+    const r = el('rect', {x, y:y(list.length), width:w, height:y(0)-y(list.length), rx:4, fill:'var(--accent)', 'fill-opacity':.85, class:'click'}, svg);
+    const t = el('text', {x:x+w/2, y:H-8, 'text-anchor':'middle'}, svg); t.textContent = n; const c = el('text', {x:x+w/2, y:y(list.length)-6, 'text-anchor':'middle', class:'num'}, svg); c.textContent = list.length;
+    r.addEventListener('mousemove', ev => tip.show(`<b>Released ${n}</b><br>${list.length} songs`, ev)); r.addEventListener('mouseleave', tip.hide);
+    r.addEventListener('click', () => openDrawer('Released ' + n, `${list.length} songs from this era.`, list, {sort:'pop'})); });
+}
+
+/* ---------- DJ ---------- */
+const LCOL = {'Stutter house':'--s1','Melodic/organic house':'--s2','Tech/bass house':'--s3','House':'--s4','Afro house':'--s5'};
+function renderDJ(){
+  const P = $('#p-dj');
+  if (M.pool.length < 12) { P.innerHTML = block(`<h2>DJ taste</h2><div class="empty">Your recent library has only ${M.pool.length} danceable electronic tracks between 116 and 142 BPM, which isn't enough to map DJ lanes yet. The DJ report works best if you save house, techno, garage or other dance music. Try adding a DJ set playlist, or explore the Listening report in the meantime.</div>`); return; }
+  const c = I.coreLane;
+  const SRC = M.set.length ? M.set : M.shortlist.map(x => x.song);
+  SRC.forEach(t => { t.flag = LN.flagOf(t); t.phase = LN.phaseOf(t); });
+  const src = M.set.length ? 'your set options' : 'suggestions from your library';
+  P.innerHTML = `${block(`<h2>DJ taste</h2><p class="thesis">Your core lane is <b>${esc(c.lane)} at ${c.lo}–${c.hi} BPM</b>.${I.below ? ` ${esc(I.below.lane)} sits below it` : ''}${I.below && I.above ? ' and' : I.below ? '.' : ''}${I.above ? ` ${esc(I.above.lane)} sits above it` : ''}${I.below || I.above ? ', which gives you a natural shape for a set.' : ''}</p><p class="muted">Based on ${M.pool.length} danceable electronic songs${M.poolSince ? ` you liked since ${M.poolSince}` : ''}, between 116 and 142 BPM.</p>`)}
+    ${M.set.length ? setOverviewHTML() : ''}
+    ${block(`<h3>Your lanes on the BPM map</h3>${hint('Each bar covers the middle 60% of tempos in that lane, and the dot marks the median. Darker bars mean more songs. Click a lane to see its songs.', '')}<div class="chart" id="lanes"></div>`)}
+    ${M.hasFeatures ? block(`<h3>Energy × tempo</h3>${hint(`Your DJ pool${M.set.length ? ' plus your set options' : ''}, with tempo left to right and energy bottom to top. Ringed dots are ${src}. Click any dot to see what mixes well with it.`, 'A good set climbs from bottom left to top right. Songs close together blend easily.')}<div class="chart" id="scatter"></div>`) : ''}
+    <div class="two">${block(`<h3>Your keys on the Camelot wheel</h3>${hint('The outer ring is major keys (B), the inner ring minor keys (A). Darker means more songs in that key. Songs mix smoothly into the same number or a neighbor (8A → 9A), or across rings (8A → 8B). Click a key to see its songs plus compatible ones.', '')}<div class="chart" id="wheel"></div>`)}
+      ${block(`<h3>A classic set shape</h3><div class="plan3" style="grid-template-columns:1fr"><div class="o"><b>Opener · lower tempo</b><p>Melodic, deeper tracks with long intros. Forgiving first blends while you settle in.</p></div><div class="b"><b>Build · your core lane</b><p>The sound you know best. Keep tempo steps small.</p></div><div class="p"><b>Peak · highest energy</b><p>Your hardest, brightest tracks. Play a few, then land it.</p></div></div>`)}</div>
+    ${SRC.some(t => t.flag) ? block(`<h3>Tracks to check before you plan</h3>${hint('', "These sit outside a typical mixing range or have low energy for a dance set. Spotify often reads tempo at half or double speed, so check them in your DJ software. The planner leaves them out unless you include them.")}<div class="flags" id="flags"></div>`) : ''}
+    ${block(`<h3>Set planner</h3>${hint(`Pick a set length. The planner chooses from ${src}, splits them into opener, build and peak, then orders each part so tempo climbs in small steps and neighboring tracks share compatible keys where possible. It assumes you play about three quarters of each track. Remove any track to swap in the next best one.`, '')}
+      <div class="planbar"><label for="plen">Set length</label><input id="plen" type="range" min="10" max="120" step="5" value="30"><output id="plenOut" for="plen">30 min</output><label class="chk"><input type="checkbox" id="pflag"> Include flagged tracks</label><button class="swap" id="preset" hidden>Reset removed tracks</button></div>
+      <p id="planSum" style="margin:0"></p><div class="chart" id="planCurve"></div>
+      <div class="tbl chart" style="padding:0"><table id="planTbl"><thead><tr><th>#</th><th>Phase</th><th>Track</th><th>BPM</th><th>Key</th><th>Energy</th><th>Into next</th><th></th></tr></thead><tbody></tbody></table></div><div id="gaps"></div>`)}
+    ${block(`<h3>${M.set.length ? 'All your set options' : 'Suggestions from your library'}</h3><p class="muted">${M.set.length ? 'Your full list, grouped by the phase the planner gives it.' : 'Picked from your recent electronic saves by lane, tempo and energy.'} Click a row to see what mixes well into it. Confirm BPM and key in your DJ software.</p><div class="pills" id="setF"></div><div class="tbl chart sl" style="padding:0"><table id="setTbl"><thead><tr><th>Phase</th><th>Track</th><th>BPM</th><th>Key</th><th>Energy</th><th>Length</th><th>Notes</th></tr></thead><tbody></tbody></table></div>`)}
+    ${block(`<h3>Hidden in your library</h3><p id="gemsTxt" style="margin:0"></p><button class="cta" id="gemsBtn" style="justify-self:start">Open the older gems</button>`)}`;
+  if (M.set.length) drawSetOverview();
+  drawLanes(); if (M.hasFeatures) drawScatter(SRC); drawWheel(SRC);
+  if (SRC.some(t => t.flag)) { $('#flags').innerHTML = SRC.filter(t => t.flag).map((t,i) => `<button class="flag" data-i="${SRC.indexOf(t)}"><span class="bpm">${t.bpm || '–'}</span><span><b style="font-weight:600">${esc(t.name)}</b> <span class="a">${esc(t.artist)}</span><p>${esc(t.flag[1])}</p></span><span class="tag">${esc(t.flag[0])}</span></button>`).join(''); $('#flags').querySelectorAll('.flag').forEach(b => b.onclick = () => openMix(SRC[+b.dataset.i])); }
+  setupPlanner(SRC); setupSetTable(SRC);
+  const GEMS = M.dated ? M.library.filter(t => t.elec && t.y && t.y < M.poolSince && t.bpm >= 118 && t.bpm <= 136 && (t.dance ?? 1) >= .6) : [];
+  $('#gemsTxt').textContent = GEMS.length ? `${GEMS.length} electronic songs you liked before ${M.poolSince} still fit your lanes (118–136 BPM, danceable). Older saves are easy to forget, and they can make a set feel less like everyone else's.` : 'No older dance tracks found yet. As your library grows, forgotten gems will show up here.';
+  $('#gemsBtn').hidden = !GEMS.length; $('#gemsBtn').onclick = () => openDrawer('Older gems for your crates', `Danceable electronic songs you liked before ${M.poolSince}, sorted by tempo.`, GEMS, {sort:'bpm'});
+}
+function setOverviewHTML(){ return block(`<h3>Your set options</h3><p class="muted">${M.set.length} tracks from your set playlist.</p>${hint('', setSays())}<div class="two"><div class="tbl chart" style="padding:0"><table id="setCmp"></table></div><div class="chart"><div id="laneMix" style="display:grid;gap:10px"></div><div class="legend" id="laneMixLeg" style="margin:12px 0 0"></div></div></div>`); }
+function setSays(){ const A = M.set, B = M.pool; const e = LN.avg(A, t => t.energy) - LN.avg(B, t => t.energy), v = LN.avg(A, t => t.valence) - LN.avg(B, t => t.valence);
+  return `Compared with your wider DJ pool, your picks are ${Math.abs(e) < .03 ? 'about as intense' : e > 0 ? 'more intense' : 'calmer'} and ${Math.abs(v) < .03 ? 'about as happy' : v > 0 ? 'happier' : 'darker'} (energy ${f2(LN.avg(A, t => t.energy))} vs ${f2(LN.avg(B, t => t.energy))}, happiness ${f2(LN.avg(A, t => t.valence))} vs ${f2(LN.avg(B, t => t.valence))}).`; }
+function drawSetOverview(){
+  const A = M.set, B = M.pool, E = a => f2(LN.avg(a, t => t.energy)), V = a => f2(LN.avg(a, t => t.valence));
+  const rows = [['Tracks', a => a.length], ['Energy', E], ['Happiness (valence)', V], ['Median BPM', a => Math.round(LN.median(a.map(t => t.bpm)))], ['Median length', a => fmtDur(Math.round(LN.median(a.map(t => t.dur))))], ['Minor-key share', a => pct(a.filter(t => t.mode === 0).length / a.length * 100)]];
+  $('#setCmp').innerHTML = '<thead><tr><th></th><th>Set options</th><th>DJ pool</th></tr></thead><tbody>' + rows.map(([l,f]) => `<tr><td class="a">${l}</td><td class="m hi">${f(A)}</td><td class="m">${f(B)}</td></tr>`).join('') + '</tbody>';
+  const top = M.lanes.slice(0,5).map(l => l.lane), cols = ['--s1','--s2','--s3','--s4','--s5','--s6'];
+  const idx = t => { const i = top.indexOf(t.lane); return i < 0 ? 5 : i; };
+  const bar = (a, label) => { const c = [0,0,0,0,0,0]; a.forEach(t => c[idx(t)]++); return `<div style="display:grid;grid-template-columns:110px 1fr;gap:12px;align-items:center;font-size:14px"><span>${label}</span><span class="minibar">${c.map((v,i) => v ? `<i style="flex:${v};background:var(${cols[i]})"></i>` : '').join('')}</span></div>`; };
+  $('#laneMix').innerHTML = bar(A, 'Set options') + bar(B, 'DJ pool');
+  $('#laneMixLeg').innerHTML = [...top, 'Other'].map((n,i) => `<span><i style="background:var(${cols[i]})"></i>${esc(n)}</span>`).join('');
+}
+function drawLanes(){
+  const box = $('#lanes'), data = M.lanes, tip = tipFor(box);
+  box.innerHTML = '<div class="legend"><span><i style="background:var(--accent)"></i>Middle 60% of songs in the lane</span><span><i style="background:var(--fg);border-radius:50%"></i>Median BPM</span></div>';
+  const W = 900, Lp = 190, R = 70, rowH = 26, gap = 10, T = 22, H = T + data.length*(rowH+gap) + 4, lo = 116, hi = 142, x = v => Lp + (W-Lp-R)*(v-lo)/(hi-lo);
+  const svg = el('svg', {viewBox:`0 0 ${W} ${H}`, role:'img', 'aria-label':'DJ lanes by BPM range'}, box);
+  [120,124,128,132,136,140].forEach(v => { el('line', {x1:x(v), x2:x(v), y1:T-6, y2:H, stroke:'var(--grid)'}, svg); const t = el('text', {x:x(v), y:12, 'text-anchor':'middle', class:'num'}, svg); t.textContent = v; });
+  const bl = el('text', {x:W, y:12, 'text-anchor':'end', class:'num'}, svg); bl.textContent = 'BPM';
+  data.forEach((d, i) => { const yy = T + i*(rowH+gap); const lt = el('text', {x:0, y:yy+rowH/2+4, class:'lab'}, svg); lt.textContent = d.lane;
+    const x0 = x(Math.max(lo, d.lo)), x1 = x(Math.min(hi, Math.max(d.hi, d.lo+1)));
+    el('rect', {x:x0, y:yy+5, width:Math.max(6, x1-x0), height:rowH-10, rx:4, fill:'var(--accent)', 'fill-opacity':.3 + .7*Math.min(1, d.n/data[0].n)}, svg);
+    el('circle', {cx:x(Math.min(hi, Math.max(lo, d.med))), cy:yy+rowH/2, r:5, fill:'var(--fg)', stroke:'var(--surface)', 'stroke-width':2}, svg);
+    const nt = el('text', {x:Math.max(x1, x(d.med)+8) + 8, y:yy+rowH/2+4, class:'num'}, svg); nt.textContent = d.n + ' songs';
+    const hit = el('rect', {x:0, y:yy, width:W, height:rowH, fill:'transparent', class:'click'}, svg);
+    hit.addEventListener('mousemove', ev => tip.show(`<b>${esc(d.lane)}</b><br>${d.n} songs · ${d.lo}–${d.hi} BPM<br>Energy ${f2(d.energy)} · Valence ${f2(d.valence)}<br>${esc(d.artists.slice(0,4).join(', '))}`, ev)); hit.addEventListener('mouseleave', tip.hide);
+    hit.addEventListener('click', () => openDrawer(d.lane, `${d.n} songs in your DJ pool · ${d.lo}–${d.hi} BPM.`, M.pool.filter(s => s.lane === d.lane), {sort:'bpm'})); });
+}
+function drawScatter(SRC){
+  const box = $('#scatter'), tip = tipFor(box), on = new Set(SRC);
+  box.innerHTML = '<div class="legend">' + Object.entries(LCOL).map(([n,c]) => `<span><i style="background:var(${c})"></i>${n}</span>`).join('') + '<span><i style="background:var(--s6)"></i>Other lanes</span><span><i style="border:2px solid var(--fg);border-radius:50%"></i>Selected</span></div>';
+  const W = 900, H = 380, Lp = 40, R = 10, T = 10, B = 30, lo = 116, hi = 142, x = v => Lp + (W-Lp-R)*(Math.min(hi, Math.max(lo, v))-lo)/(hi-lo), y = v => T + (H-T-B)*(1-(Math.max(.2, v)-.2)/.8);
+  const svg = el('svg', {viewBox:`0 0 ${W} ${H}`, role:'img', 'aria-label':'DJ pool by tempo and energy'}, box);
+  hbarAxis(svg, x, T, H-B, [120,124,128,132,136,140]); yAxis(svg, y, Lp, W, R, [.2,.4,.6,.8,1], v => v.toFixed(1));
+  const xl = el('text', {x:W-R, y:H-2, 'text-anchor':'end', class:'num'}, svg); xl.textContent = 'BPM →'; const yl = el('text', {x:Lp+4, y:T+12, class:'num'}, svg); yl.textContent = '↑ energy';
+  [...new Set([...M.pool, ...SRC.filter(t => t.bpm >= lo && t.bpm <= hi)])].sort((a,b) => on.has(a) - on.has(b)).forEach(s => { const hit = on.has(s);
+    const c = el('circle', {cx:x(s.bpm), cy:y(s.energy ?? .5), r: hit ? 6.5 : 4.5, fill:`var(${LCOL[s.lane] || '--s6'})`, 'fill-opacity': hit ? 1 : .55, stroke: hit ? 'var(--fg)' : 'var(--surface)', 'stroke-width': hit ? 2 : 1, class:'click'}, svg);
+    c.addEventListener('mousemove', ev => tip.show(songTip(s) + `<br><small>${esc(s.lane || '')}</small>`, ev)); c.addEventListener('mouseleave', tip.hide); c.addEventListener('click', () => openMix(s)); });
+}
+function drawWheel(SRC){
+  const box = $('#wheel'), tip = tipFor(box), cnt = {}; SRC.forEach(s => cnt[s.camelot] = (cnt[s.camelot] || 0) + 1); const max = Math.max(1, ...Object.values(cnt));
+  const S = 360, c = S/2, svg = el('svg', {viewBox:`0 0 ${S} ${S}`, role:'img', 'aria-label':'Camelot wheel', style:'max-width:420px;margin:0 auto'}, box);
+  const arc = (r0, r1, a0, a1) => { const p = (r,a) => [c + r*Math.cos(a), c + r*Math.sin(a)]; const [x0,y0] = p(r1,a0), [x1,y1] = p(r1,a1), [x2,y2] = p(r0,a1), [x3,y3] = p(r0,a0); return `M${x0},${y0} A${r1},${r1} 0 0 1 ${x1},${y1} L${x2},${y2} A${r0},${r0} 0 0 0 ${x3},${y3} Z`; };
+  for (let n = 1; n <= 12; n++) ['B','A'].forEach(l => { const k = n + l, a0 = -Math.PI/2 + (n-1.5)*Math.PI/6 + .012, a1 = a0 + Math.PI/6 - .024, [r0, r1] = l === 'B' ? [118,170] : [64,116], v = cnt[k] || 0;
+    const path = el('path', {d:arc(r0,r1,a0,a1), fill:'var(--accent)', 'fill-opacity': v ? .12 + .88*v/max : .04, stroke:'var(--line)', class:'click'}, svg);
+    const am = (a0+a1)/2, rm = (r0+r1)/2, t = el('text', {x:c + rm*Math.cos(am), y:c + rm*Math.sin(am) + 4, 'text-anchor':'middle', class:'num', style:`pointer-events:none;fill:${v/max > .55 ? '#fff' : 'var(--fg)'}`}, svg); t.textContent = k;
+    path.addEventListener('mousemove', ev => tip.show(`<b>${k}</b> · ${v} songs<br><small>Mixes with ${LN.camNeighbors(k).join(', ')}</small>`, ev)); path.addEventListener('mouseleave', tip.hide);
+    path.addEventListener('click', () => { const comp = [k, ...LN.camNeighbors(k)]; const pool = [...new Set([...SRC, ...M.pool])]; openDrawer('Key ' + k + ' and its neighbors', `${v} selected songs in ${k}. The list also includes ${LN.camNeighbors(k).join(', ')}, which mix smoothly with it.`, pool.filter(s => comp.includes(s.camelot)).sort((a,b) => (b.camelot === k) - (a.camelot === k)), {why: s => s.camelot === k ? 'In ' + k : 'Compatible: ' + s.camelot}); }); });
+  const ct = el('text', {x:c, y:c-4, 'text-anchor':'middle', class:'lab'}, svg); ct.textContent = 'A = minor'; const ct2 = el('text', {x:c, y:c+12, 'text-anchor':'middle', class:'num'}, svg); ct2.textContent = 'B = major';
+}
+const phaseCol = p => p === 'Opener' ? 'var(--op)' : p === 'Build' ? 'var(--bu)' : 'var(--pk)';
+function drawCurve(box, items){
+  box.innerHTML = '<div class="legend"><span><i style="background:var(--op)"></i>Opener</span><span><i style="background:var(--bu)"></i>Build</span><span><i style="background:var(--pk)"></i>Peak</span></div>';
+  if (!items.length) { box.insertAdjacentHTML('beforeend', '<p class="muted">Not enough tracks to plan yet.</p>'); return; }
+  const tip = tipFor(box), n = items.length, W = 900, Lp = 44, R = 10, H1 = 150, H2 = 110, G = 26, T = 8, H = T + H1 + G + H2 + 20, bw = (W-Lp-R)/n;
+  const svg = el('svg', {viewBox:`0 0 ${W} ${H}`, role:'img', 'aria-label':'Tempo and energy in set order'}, box);
+  const bmin = Math.min(118, ...items.map(r => r.bpm)), bmax = Math.max(138, ...items.map(r => r.bpm)), yb = v => T + H1*(1-(v-bmin)/(bmax-bmin)), ye = v => T + H1 + G + H2*(1-v);
+  const tk = []; for (let v = Math.ceil(bmin/5)*5; v <= bmax; v += 5) tk.push(v); yAxis(svg, yb, Lp, W, R, tk); yAxis(svg, ye, Lp, W, R, [0,.5,1], v => v.toFixed(1));
+  const a = el('text', {x:Lp, y:T+10, class:'num lab'}, svg); a.textContent = 'Tempo (BPM)'; const b = el('text', {x:Lp, y:T+H1+G-6, class:'num lab'}, svg); b.textContent = 'Energy';
+  let d = ''; items.forEach((r,i) => d += (i ? 'L' : 'M') + (Lp + i*bw + bw/2) + ',' + yb(r.bpm)); el('path', {d, fill:'none', stroke:'var(--faint)', 'stroke-width':2}, svg);
+  items.forEach((r,i) => { const cx = Lp + i*bw + bw/2; el('circle', {cx, cy:yb(r.bpm), r:4.5, fill:phaseCol(r.phase), stroke:'var(--surface)', 'stroke-width':2}, svg);
+    el('rect', {x:Lp + i*bw + 2, y:ye(r.energy ?? 0), width:Math.max(2, bw-4), height:ye(0)-ye(r.energy ?? 0), rx:3, fill:phaseCol(r.phase)}, svg);
+    const hit = el('rect', {x:Lp + i*bw, y:T, width:bw, height:H-T-20, fill:'transparent', class:'click'}, svg);
+    hit.addEventListener('mousemove', ev => tip.show(`<b>${i+1}. ${esc(r.name)}</b><br>${esc(r.artist)}<br><small>${r.bpm} BPM · ${r.camelot} · energy ${f2(r.energy)} · ${r.phase}</small>`, ev)); hit.addEventListener('mouseleave', tip.hide); hit.addEventListener('click', () => openMix(r));
+    if (n <= 16 || (i+1) % 5 === 0 || i === 0) { const t = el('text', {x:cx, y:H-4, 'text-anchor':'middle', class:'num'}, svg); t.textContent = i+1; } });
+}
+function setupPlanner(SRC){
+  const REMOVED = new Set();
+  const plan = () => {
+    const min = +$('#plen').value; $('#plenOut').textContent = min + ' min'; $('#preset').hidden = !REMOVED.size;
+    const cands = SRC.filter(s => s.bpm && !REMOVED.has(s) && ($('#pflag').checked || !s.flag));
+    const P = LN.plan(cands, min), seq = P.seq;
+    const total = Math.round(seq.reduce((a,s) => a + P.play(s), 0) / 60), okT = seq.slice(1).filter((s,i) => LN.transNote(seq[i], s)[1] === 'ok').length;
+    $('#planSum').innerHTML = seq.length ? `<b>${seq.length} tracks</b>, about ${total} minutes: ${LN.PH.map(p => seq.filter(s => s.phase === p).length + ' ' + p.toLowerCase()).join(', ')}. ${okT} of ${Math.max(0, seq.length-1)} transitions line up on both tempo and key.` : 'Not enough tracks to plan. Try including flagged tracks or adding more to your set playlist.';
+    drawCurve($('#planCurve'), seq);
+    const tb = $('#planTbl tbody');
+    tb.innerHTML = seq.map((s,i) => { const tn = i < seq.length-1 ? LN.transNote(s, seq[i+1]) : ['end of set', '', 'Last track.'];
+      return `<tr><td class="m">${i+1}</td><td><span class="chip ${s.phase}">${s.phase}</span></td><td>${esc(s.name)}<br><span class="a">${esc(s.artist)}${s.flag ? ' · ⚑ ' + esc(s.flag[0]) : ''}</span></td><td class="m">${s.bpm}</td><td class="m">${s.camelot}</td><td class="m"><span class="ebar"><i style="width:${Math.round((s.energy ?? 0)*100)}%"></i></span>${f2(s.energy)}</td><td><span class="trans ${tn[1]}" title="${esc(tn[2])}">${esc(tn[0])}</span></td><td><button class="swap" data-i="${i}" aria-label="Remove ${esc(s.name)}">Remove</button></td></tr>`; }).join('');
+    tb.querySelectorAll('.swap').forEach(b => b.onclick = () => { REMOVED.add(seq[+b.dataset.i]); plan(); });
+    const g = [];
+    if (P.byP.Opener.length < Math.max(2, Math.round(P.N * .25))) { const first = seq.find(s => s.phase === 'Build') || seq[0];
+      const br = M.library.filter(s => s.elec && !SRC.includes(s) && (LN.MELODIC.includes(s.lane) || s.lane === 'House') && s.bpm >= 119 && s.bpm <= 126 && (s.dance ?? 1) >= .55 && (!first || LN.camCompat(s.camelot, first.camelot) || Math.abs(s.bpm - first.bpm) <= 3)).sort((a,b) => b.pop - a.pop);
+      if (br.length) g.push([`You have only ${P.byP.Opener.length} opener-style tracks for a ${min}-minute set. A few slower, melodic tracks would warm things up.`, 'Show opener candidates', () => openDrawer('Opener candidates', 'Melodic, afro, deep or house tracks at 119–126 BPM from your library.', br, {sort:'pop'})]); }
+    if (P.byP.Peak.length < P.q.Peak + 1) { const pk = M.library.filter(s => s.elec && !SRC.includes(s) && s.bpm >= 130 && s.bpm <= 137 && (s.energy ?? 0) >= .82);
+      if (pk.length) g.push(['Your peak section has few spare tracks. A couple more 130–136 BPM bangers would give you backups.', 'Show peak candidates', () => openDrawer('Peak candidates', 'High-energy tracks from your library at 130–137 BPM.', pk, {sort:'pop'})]); }
+    $('#gaps').innerHTML = g.map((x,i) => `<div class="gap"><span><b>Gap check.</b> ${esc(x[0])}</span><button class="cta" data-i="${i}" style="padding:6px 12px;font-size:13px;justify-self:start">${esc(x[1])}</button></div>`).join('');
+    $('#gaps').querySelectorAll('button').forEach(b => b.onclick = g[+b.dataset.i][2]);
+  };
+  $('#plen').addEventListener('input', plan); $('#pflag').addEventListener('change', plan); $('#preset').onclick = () => { REMOVED.clear(); plan(); };
+  plan();
+}
+function setupSetTable(SRC){
+  const F = $('#setF'), ph = s => s.flag ? 'Check' : s.phase, cnt = p => p === 'All' ? SRC.length : SRC.filter(s => ph(s) === p).length;
+  F.innerHTML = ['All','Opener','Build','Peak','Check'].filter(p => cnt(p)).map((p,i) => `<button aria-pressed="${i===0}" data-p="${p}">${p === 'All' ? 'All ' + SRC.length : p + ' ' + cnt(p)}</button>`).join('');
+  const render = p => { const tb = $('#setTbl tbody'); tb.innerHTML = ''; const ord = s => ['Opener','Build','Peak','Check'].indexOf(ph(s));
+    [...SRC].sort((a,b) => ord(a) - ord(b) || a.bpm - b.bpm).forEach(s => { if (p !== 'All' && ph(s) !== p) return;
+      const tr = document.createElement('tr'); tr.className = 'row'; tr.tabIndex = 0;
+      tr.innerHTML = `<td><span class="chip ${ph(s)}">${ph(s)}</span></td><td>${esc(s.name)}<br><span class="a">${esc(s.artist)} · ${esc(s.lane || 'untagged')}</span></td><td class="m">${s.bpm}</td><td class="m">${s.camelot}</td><td class="m"><span class="ebar"><i style="width:${Math.round((s.energy ?? 0)*100)}%"></i></span>${f2(s.energy)}</td><td class="m">${fmtDur(s.dur)}</td><td class="a">${s.flag ? '⚑ ' + esc(s.flag[0]) : ''}</td>`;
+      const toggle = () => { const nx = tr.nextElementSibling; if (nx && nx.classList.contains('more')) { nx.remove(); return; } const m = LN.mixesInto(s, SRC, 5); const ex = document.createElement('tr'); ex.className = 'more';
+        ex.innerHTML = `<td colspan="7"><div class="mixes"><b>Mixes well into, from this list:</b>${m.length ? m.map(x => `<div><span>${esc(x.name)}</span><span class="a">${esc(x.artist)} · ${x.bpm} BPM · ${x.camelot}</span></div>`).join('') : '<div class="a">No close match in this list.</div>'}<div><button class="cta" style="padding:6px 12px;font-size:13px">Find matches in your whole library</button></div></div></td>`;
+        ex.querySelector('button').onclick = e => { e.stopPropagation(); openMix(s); }; tr.after(ex); };
+      tr.onclick = toggle; tr.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }; tb.appendChild(tr); }); };
+  F.querySelectorAll('button').forEach(b => b.onclick = () => { F.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); render(b.dataset.p); });
+  render('All');
+}
+
+/* ---------- PRODUCING ---------- */
+function renderProducing(){
+  const P = $('#p-producing'), A = M.inspo, fI = I.fI, fL = I.fL, ELEC = M.library.filter(t => t.elec);
+  const diff = (a, b, hi, lo) => Math.abs(a - b) < .03 ? 'about the same as' : a > b ? hi : lo;
+  P.innerHTML = `${block(`<h2>Producing taste</h2><p class="thesis"><b>${esc(I.inspoTone)} ${esc((I.inspoLane || '').toLowerCase())}.</b> Around ${fI.bpm} BPM, ${pct(fI.minor*100)} minor keys, ${fmtDur(fI.dur)} long on average, and ${pct(fI.vocal*100)} vocal-led. That's ${diff(fI.valence, fL.valence, 'brighter than', 'darker than')} what you listen to and ${diff(fI.energy, fL.energy, 'more intense than', 'calmer than')} it.</p><p class="muted">${A.length} tracks in your inspiration playlist, ${A.filter(t => M.library.includes(t)).length} of them also in your library.</p><button class="cta" id="inspoAll" style="justify-self:start">Browse all inspiration tracks</button>`)}
+    ${block(`<h3>Your inspiration vs. your library</h3>${hint('Each row is one quality of the music, on a 0 to 1 scale. The dots compare your whole library, your electronic songs and your inspiration playlist. The farther apart they sit, the more your production taste differs from your listening.', '')}<div class="chart" id="dumb"></div><div class="tbl chart" style="padding:0"><table id="cmp"></table></div>`)}
+    ${block(`<h3>Where the tempo sits</h3>${hint('The share of tracks in each 4-BPM band. Click a band to list its tracks.', `Your inspiration centers on ${fI.bpm} BPM. The tighter the inspiration bars bunch together, the clearer your production tempo.`)}<div class="chart" id="hist"></div>`)}
+    ${block(`<h3>Reference board</h3><p class="muted" style="margin:0">Tracks from your inspiration playlist to study, each for one specific thing. Click a card to find songs in your library that share its tempo and feel.</p><div class="refs" id="refs"></div>`)}`;
+  $('#inspoAll').onclick = () => openDrawer('Inspiration playlist', 'Every track, in playlist order.', A);
+  const box = $('#dumb'), tip = tipFor(box);
+  const F = [['Energy', t => t.energy], ['Danceability', t => t.dance], ['Happiness (valence)', t => t.valence], ['Acousticness', t => t.acoustic], ['Instrumental', t => t.instr], ['Spoken words', t => t.speech]];
+  const G = [['All liked', M.library, 'var(--s6)'], ...(ELEC.length > 20 ? [['Electronic', ELEC, 'var(--s1)']] : []), ['Inspiration', A, 'var(--accent)']];
+  box.innerHTML = '<div class="legend">' + G.map(g => `<span><i style="background:${g[2]};border-radius:50%"></i>${g[0]}</span>`).join('') + '</div>';
+  const W = 900, Lp = 170, R = 20, rowH = 36, T = 20, H = T + F.length*rowH + 8, x = v => Lp + (W-Lp-R)*v;
+  const svg = el('svg', {viewBox:`0 0 ${W} ${H}`, role:'img', 'aria-label':'Audio qualities compared'}, box);
+  [0,.25,.5,.75,1].forEach(v => { el('line', {x1:x(v), x2:x(v), y1:T-8, y2:H, stroke:'var(--grid)'}, svg); const t = el('text', {x:x(v), y:10, 'text-anchor':'middle', class:'num'}, svg); t.textContent = v; });
+  F.forEach(([n,f], i) => { const yy = T + i*rowH + rowH/2, vals = G.map(g => LN.avg(g[1], f)); const lt = el('text', {x:0, y:yy+4, class:'lab'}, svg); lt.textContent = n;
+    el('line', {x1:x(Math.min(...vals)), x2:x(Math.max(...vals)), y1:yy, y2:yy, stroke:'var(--line)', 'stroke-width':4, 'stroke-linecap':'round'}, svg);
+    G.forEach((g,gi) => { const c = el('circle', {cx:x(vals[gi]), cy:yy, r:7, fill:g[2], stroke:'var(--surface)', 'stroke-width':2}, svg); c.addEventListener('mousemove', ev => tip.show(`<b>${n}</b><br>${g[0]}: ${f2(vals[gi])}`, ev)); c.addEventListener('mouseleave', tip.hide); }); });
+  const fe = ELEC.length > 20 ? LN.feats(ELEC) : null;
+  const rows = [['Median tempo', v => v.bpm + ' BPM'], ['Happiness (valence)', v => f2(v.valence)], ['Minor-key share', v => pct(v.minor*100)], ['Energy', v => f2(v.energy)], ['Median length', v => fmtDur(v.dur)], ['Vocal-led share', v => pct(v.vocal*100)]];
+  $('#cmp').innerHTML = `<thead><tr><th></th><th>All liked</th>${fe ? '<th>Electronic</th>' : ''}<th>Inspiration</th></tr></thead><tbody>` + rows.map(([l,f]) => `<tr><td class="a">${l}</td><td class="m">${f(fL)}</td>${fe ? `<td class="m">${f(fe)}</td>` : ''}<td class="m hi">${f(fI)}</td></tr>`).join('') + '</tbody>';
+  // histogram
+  const hb = $('#hist'), ht = tipFor(hb), base = ELEC.length > 20 ? ELEC : M.library, baseName = ELEC.length > 20 ? 'Liked electronic' : 'All liked';
+  const bpms = A.map(t => t.bpm).filter(Boolean), lo = Math.max(60, Math.floor((LN.q(bpms, .02) - 8) / 4) * 4), hi = Math.min(200, Math.ceil((LN.q(bpms, .98) + 8) / 4) * 4);
+  const edges = []; for (let b = lo; b < hi; b += 4) edges.push(b);
+  const cnt = Lx => edges.map(b => Lx.filter(s => s.bpm >= b && s.bpm < b+4)); const a = cnt(base), bb = cnt(A); const pa = a.map(v => v.length / base.length * 100), pb = bb.map(v => v.length / A.length * 100);
+  hb.innerHTML = `<div class="legend"><span><i style="background:var(--s6)"></i>${baseName}</span><span><i style="background:var(--accent)"></i>Inspiration</span></div>`;
+  const W2 = 900, H2 = 250, L2 = 40, R2 = 8, T2 = 10, B2 = 36, mx = Math.ceil(Math.max(1, ...pa, ...pb) / 10) * 10, bw = (W2-L2-R2)/edges.length;
+  const s2 = el('svg', {viewBox:`0 0 ${W2} ${H2}`, role:'img', 'aria-label':'Share of tracks by BPM band'}, hb); const y = v => T2 + (H2-T2-B2)*(1 - v/mx);
+  const tks = []; for (let v = 0; v <= mx; v += 10) tks.push(v); yAxis(s2, y, L2, W2, R2, tks, v => v + '%');
+  edges.forEach((e, i) => { const x0 = L2 + i*bw, w = Math.max(1, (bw-10)/2 - 1);
+    [[pa[i],'var(--s6)',0],[pb[i],'var(--accent)',1]].forEach(([v,c,k]) => { const h = y(0)-y(v); if (h > 0) el('rect', {x:x0+5+k*(w+2), y:y(v), width:w, height:h, rx:Math.min(4,w/2), fill:c}, s2); });
+    if (edges.length <= 16 || i % 2 === 0) { const tl = el('text', {x:x0+bw/2, y:H2-B2+16, 'text-anchor':'middle', class:'num'}, s2); tl.textContent = e; }
+    const hit = el('rect', {x:x0, y:T2, width:bw, height:H2-T2-B2, fill:'transparent', class:'click'}, s2);
+    hit.addEventListener('mousemove', ev => ht.show(`<b>${e}–${e+4} BPM</b><br>${baseName}: ${pa[i].toFixed(0)}%<br>Inspiration: ${pb[i].toFixed(0)}%`, ev)); hit.addEventListener('mouseleave', ht.hide);
+    hit.addEventListener('click', () => openDrawer(`${e}–${e+4} BPM`, 'Inspiration tracks first, then library songs in this tempo band.', [...bb[i], ...a[i].filter(s => !s.inInspo)], {why: s => s.inInspo ? 'In your inspiration playlist' : ''})); });
+  const xl = el('text', {x:W2-R2, y:H2-2, 'text-anchor':'end', class:'num'}, s2); xl.textContent = 'BPM band start';
+  // refs
+  const R3 = I.inspoRefs;
+  $('#refs').innerHTML = R3.map((r,i) => `<button class="ref" data-i="${i}"><span class="tag">${esc(r.tag)}</span><span class="t">${esc(r.t.name)}</span><span class="a">${esc(r.t.artist)}</span><span class="spec">${r.t.bpm} BPM · ${esc(r.t.camelot)} · ${fmtDur(r.t.dur)}</span><p>${esc(r.why)}</p><span class="a" style="color:var(--accent-ink)">Find similar in your library →</span></button>`).join('');
+  $('#refs').querySelectorAll('.ref').forEach(b => b.onclick = () => openSong(R3[+b.dataset.i].t));
+}
+
+/* ---------- METHOD ---------- */
+function renderMethod(){
+  $('#p-method').innerHTML = `${block(`<h2>How this report works</h2><div class="eras">${[['Export','You download your library from Spotify (via Exportify or your account data), Apple Music, rekordbox, Last.fm or TuneMyMusic. Exportify files carry the most detail: genres, BPM, key, energy and valence.'],['Analyze','This page reads the files in your browser, groups genres into families, fills untagged songs from the artist\'s other songs, and computes every chart. Nothing is sent anywhere.'],['Explore','Every chart, stat and name opens the songs behind it. Close the tab and the data is gone.']].map(r => `<div class="era" style="cursor:default"><b>${r[0]}</b><span>${r[1]}</span></div>`).join('')}</div>`)}
+    ${block(`<h3>Glossary</h3><div class="hint"><p><b>BPM:</b> beats per minute, or tempo. House is usually 120–130, UK garage 130–140.</p><p><b>Energy:</b> Spotify's 0–1 measure of intensity.</p><p><b>Valence:</b> Spotify's 0–1 measure of how happy a song sounds. Low means sad or dark.</p><p><b>Camelot key:</b> a DJ-friendly code for musical key. Neighboring numbers mix smoothly.</p><p><b>Lane:</b> a family of similar dance styles, like tech house or melodic house.</p></div>`)}
+    ${block(`<h3>Caveats</h3><p>Spotify assigns genres per artist, not per song, and some songs have no tag at all (${pct(M.untaggedShare*100)} of this library before filling). BPM and key come from automated detection and are sometimes doubled, halved or off by a key. Treat this as a map, not a verdict.</p>`)}`;
+}
+$('#aboutLink').onclick = () => { closeDrawer(); view('landing'); requestAnimationFrame(() => $('#about').scrollIntoView({behavior:'smooth'})); };
+
+</script>
+
+</body>
+</html>
